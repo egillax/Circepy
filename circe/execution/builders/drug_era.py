@@ -2,49 +2,39 @@ from __future__ import annotations
 
 from ...cohortdefinition.criteria import DrugEra
 from ..build_context import BuildContext
-from .common import (
-    apply_age_filter,
-    apply_codeset_filter,
-    apply_date_range,
-    apply_first_event,
-    apply_gender_filter,
-    apply_interval_range,
-    apply_numeric_range,
-    standardize_output,
-)
-from .groups import apply_criteria_group
-from .registry import register
+from .common import apply_interval_range, apply_numeric_range
+from .framework import BuilderSpec, BuildState
+from .registry import register_framework
 
 
-@register("DrugEra")
-def build_drug_era(criteria: DrugEra, ctx: BuildContext):
-    table = ctx.table("drug_era")
-
-    table = apply_codeset_filter(table, "drug_concept_id", criteria.codeset_id, ctx)
-    table = apply_date_range(table, "drug_era_start_date", criteria.era_start_date)
-    table = apply_date_range(table, "drug_era_end_date", criteria.era_end_date)
+def _domain_hook(state: BuildState, criteria: DrugEra, ctx: BuildContext) -> BuildState:
+    table = state.table
     table = apply_numeric_range(table, "drug_exposure_count", criteria.occurrence_count)
     table = apply_numeric_range(table, "gap_days", criteria.gap_days)
     table = apply_interval_range(
-        table, "drug_era_start_date", "drug_era_end_date", criteria.era_length
-    )
-
-    if criteria.age_at_start:
-        table = apply_age_filter(
-            table, criteria.age_at_start, ctx, "drug_era_start_date"
-        )
-    if criteria.age_at_end:
-        table = apply_age_filter(table, criteria.age_at_end, ctx, "drug_era_end_date")
-
-    table = apply_gender_filter(table, criteria.gender, criteria.gender_cs, ctx)
-
-    if criteria.first:
-        table = apply_first_event(table, "drug_era_start_date", "drug_era_id")
-
-    events = standardize_output(
         table,
+        "drug_era_start_date",
+        "drug_era_end_date",
+        criteria.era_length,
+    )
+    state.table = table
+    return state
+
+
+register_framework(
+    "DrugEra",
+    spec=BuilderSpec(
+        source_table="drug_era",
         primary_key="drug_era_id",
         start_column="drug_era_start_date",
         end_column="drug_era_end_date",
-    )
-    return apply_criteria_group(events, criteria.correlated_criteria, ctx)
+        concept_column="drug_concept_id",
+        start_range_attr="era_start_date",
+        end_range_attr="era_end_date",
+        age_attr=None,
+        age_at_start_attr="age_at_start",
+        age_at_end_attr="age_at_end",
+        first_position="after_shared",
+    ),
+    domain_hook=_domain_hook,
+)

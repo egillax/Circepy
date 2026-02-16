@@ -82,8 +82,14 @@ class FrameworkBuilder:
         self._projection_hook = projection_hook or _identity_hook
 
     def __call__(self, criteria: Any, ctx: BuildContext) -> ir.Table:
+        self._validate_configured_attrs(criteria)
         state = self._initial_state(criteria, ctx)
 
+        if self.spec.codeset_attr and not state.concept_column:
+            raise ValueError(
+                f"Builder for {criteria.__class__.__name__} configured `codeset_attr` "
+                "but did not resolve a concept column."
+            )
         if state.concept_column and self.spec.codeset_attr:
             codeset_id = _attr(criteria, self.spec.codeset_attr)
             state.table = apply_codeset_filter(
@@ -114,6 +120,31 @@ class FrameworkBuilder:
 
         correlated = _attr(criteria, self.spec.correlated_attr)
         return apply_criteria_group(events, correlated, ctx)
+
+    def _validate_configured_attrs(self, criteria: Any) -> None:
+        configured = {
+            name
+            for name in (
+                self.spec.codeset_attr,
+                self.spec.start_range_attr,
+                self.spec.end_range_attr,
+                self.spec.first_attr,
+                self.spec.age_attr,
+                self.spec.age_at_start_attr,
+                self.spec.age_at_end_attr,
+                self.spec.gender_attr,
+                self.spec.gender_selection_attr,
+                self.spec.correlated_attr,
+            )
+            if name
+        }
+        missing = sorted(name for name in configured if not hasattr(criteria, name))
+        if missing:
+            joined = ", ".join(missing)
+            raise ValueError(
+                f"{criteria.__class__.__name__} is missing expected criteria "
+                f"attribute(s): {joined}"
+            )
 
     def _initial_state(self, criteria: Any, ctx: BuildContext) -> BuildState:
         primary_key = _resolve_primary_key(criteria, self.spec)
@@ -233,8 +264,10 @@ def _resolve_end_column(criteria: Any, spec: BuilderSpec) -> str:
         return spec.end_column
     if hasattr(criteria, "get_end_date_column"):
         return str(criteria.get_end_date_column())
-    start = _resolve_start_column(criteria, spec)
-    return start
+    raise ValueError(
+        f"Unable to resolve end column for {criteria.__class__.__name__}. "
+        "Set `end_column` in BuilderSpec."
+    )
 
 
 def _resolve_concept_column(criteria: Any, spec: BuilderSpec) -> Optional[str]:

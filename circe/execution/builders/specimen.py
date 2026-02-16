@@ -3,27 +3,19 @@ from __future__ import annotations
 from ...cohortdefinition.criteria import Specimen
 from ..build_context import BuildContext
 from .common import (
-    apply_age_filter,
     apply_codeset_filter,
     apply_concept_criteria,
-    apply_date_range,
-    apply_first_event,
-    apply_gender_filter,
     apply_numeric_range,
     apply_text_filter,
-    standardize_output,
 )
-from .groups import apply_criteria_group
-from .registry import register
+from .framework import BuilderSpec, BuildState
+from .registry import register_framework
 
 
-@register("Specimen")
-def build_specimen(criteria: Specimen, ctx: BuildContext):
-    table = ctx.table("specimen")
-
-    table = apply_codeset_filter(table, "specimen_concept_id", criteria.codeset_id, ctx)
-    table = apply_date_range(table, "specimen_date", criteria.occurrence_start_date)
-
+def _domain_hook(
+    state: BuildState, criteria: Specimen, ctx: BuildContext
+) -> BuildState:
+    table = state.table
     table = apply_concept_criteria(
         table,
         column="specimen_type_concept_id",
@@ -68,17 +60,22 @@ def build_specimen(criteria: Specimen, ctx: BuildContext):
             ctx,
         )
 
-    if criteria.age:
-        table = apply_age_filter(table, criteria.age, ctx, "specimen_date")
-    table = apply_gender_filter(table, criteria.gender, criteria.gender_cs, ctx)
+    state.table = table
+    return state
 
-    if criteria.first:
-        table = apply_first_event(table, "specimen_date", "specimen_id")
 
-    events = standardize_output(
-        table,
+register_framework(
+    "Specimen",
+    spec=BuilderSpec(
+        source_table="specimen",
         primary_key="specimen_id",
         start_column="specimen_date",
         end_column="specimen_date",
-    )
-    return apply_criteria_group(events, criteria.correlated_criteria, ctx)
+        concept_column="specimen_concept_id",
+        start_range_attr="occurrence_start_date",
+        end_range_attr=None,
+        age_column="specimen_date",
+        first_position="after_post",
+    ),
+    domain_hook=_domain_hook,
+)

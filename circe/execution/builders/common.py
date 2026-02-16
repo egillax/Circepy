@@ -49,8 +49,10 @@ def standardize_output(
         end_expr = ibis.coalesce(end_raw, start_expr).cast("timestamp")
         needs_offset = end_raw.isnull()
     else:
-        end_expr = start_expr
-        needs_offset = ibis.literal(True)
+        raise ValueError(
+            f"Configured end column `{end_column}` not found in event table columns: "
+            f"{table.columns}"
+        )
     one_day = ibis.interval(days=1)
     end_expr = ibis.ifelse(needs_offset, cast(Any, end_expr) + one_day, end_expr).cast(
         "timestamp"

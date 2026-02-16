@@ -3,40 +3,27 @@ from __future__ import annotations
 from ...cohortdefinition.criteria import VisitDetail
 from ..build_context import BuildContext
 from .common import (
-    apply_age_filter,
     apply_care_site_filter,
     apply_codeset_filter,
     apply_concept_set_selection,
-    apply_date_range,
-    apply_first_event,
-    apply_gender_filter,
     apply_interval_range,
     apply_location_region_filter,
     apply_provider_specialty_filter,
     project_event_columns,
-    standardize_output,
 )
-from .groups import apply_criteria_group
-from .registry import register
+from .framework import BuilderSpec, BuildState
+from .registry import register_framework
 
 
-@register("VisitDetail")
-def build_visit_detail(criteria: VisitDetail, ctx: BuildContext):
-    table = ctx.table("visit_detail")
-
-    table = apply_codeset_filter(
-        table, "visit_detail_concept_id", criteria.codeset_id, ctx
-    )
-    if criteria.first:
-        table = apply_first_event(table, "visit_detail_start_date", "visit_detail_id")
-    table = apply_date_range(
-        table, "visit_detail_start_date", criteria.visit_detail_start_date
-    )
-    table = apply_date_range(
-        table, "visit_detail_end_date", criteria.visit_detail_end_date
-    )
+def _domain_hook(
+    state: BuildState, criteria: VisitDetail, ctx: BuildContext
+) -> BuildState:
+    table = state.table
     table = apply_concept_set_selection(
-        table, "visit_detail_type_concept_id", criteria.visit_detail_type_cs, ctx
+        table,
+        "visit_detail_type_concept_id",
+        criteria.visit_detail_type_cs,
+        ctx,
     )
     if criteria.visit_detail_source_concept is not None:
         table = apply_codeset_filter(
@@ -51,10 +38,14 @@ def build_visit_detail(criteria: VisitDetail, ctx: BuildContext):
         "visit_detail_end_date",
         criteria.visit_detail_length,
     )
+    state.table = table
+    return state
 
-    if criteria.age:
-        table = apply_age_filter(table, criteria.age, ctx, "visit_detail_end_date")
-    table = apply_gender_filter(table, [], criteria.gender_cs, ctx)
+
+def _post_hook(
+    state: BuildState, criteria: VisitDetail, ctx: BuildContext
+) -> BuildState:
+    table = state.table
     table = apply_provider_specialty_filter(
         table,
         None,
@@ -70,19 +61,40 @@ def build_visit_detail(criteria: VisitDetail, ctx: BuildContext):
         end_column="visit_detail_end_date",
         ctx=ctx,
     )
+    state.table = table
+    return state
 
-    table = project_event_columns(
-        table,
-        primary_key="visit_detail_id",
-        start_column="visit_detail_start_date",
-        end_column="visit_detail_end_date",
+
+def _projection_hook(
+    state: BuildState, criteria: VisitDetail, ctx: BuildContext
+) -> BuildState:
+    state.table = project_event_columns(
+        state.table,
+        primary_key=state.primary_key,
+        start_column=state.start_column,
+        end_column=state.end_column,
         include_visit_occurrence=True,
     )
+    return state
 
-    events = standardize_output(
-        table,
+
+register_framework(
+    "VisitDetail",
+    spec=BuilderSpec(
+        source_table="visit_detail",
         primary_key="visit_detail_id",
         start_column="visit_detail_start_date",
         end_column="visit_detail_end_date",
-    )
-    return apply_criteria_group(events, criteria.correlated_criteria, ctx)
+        concept_column="visit_detail_concept_id",
+        start_range_attr="visit_detail_start_date",
+        end_range_attr="visit_detail_end_date",
+        age_column="visit_detail_end_date",
+        gender_attr=None,
+        gender_selection_attr="gender_cs",
+        gender_default=[],
+        first_position="before_dates",
+    ),
+    domain_hook=_domain_hook,
+    post_hook=_post_hook,
+    projection_hook=_projection_hook,
+)

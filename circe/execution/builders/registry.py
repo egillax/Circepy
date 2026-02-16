@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
-from typing import Dict
+from typing import Dict, Optional
 
 import ibis.expr.types as ir
 
 from ...cohortdefinition.criteria import Criteria
 from ..build_context import BuildContext
+from .framework import BuilderSpec, BuildHook, FrameworkBuilder
 
 _REGISTRY: Dict[str, Callable[[Criteria, BuildContext], ir.Table]] = {}
 
@@ -18,6 +19,24 @@ def register(criteria_name: str):
         return func
 
     return decorator
+
+
+def register_framework(
+    criteria_name: str,
+    *,
+    spec: BuilderSpec,
+    domain_hook: Optional[BuildHook] = None,
+    post_hook: Optional[BuildHook] = None,
+    projection_hook: Optional[BuildHook] = None,
+) -> FrameworkBuilder:
+    builder = FrameworkBuilder(
+        spec=spec,
+        domain_hook=domain_hook,
+        post_hook=post_hook,
+        projection_hook=projection_hook,
+    )
+    _REGISTRY[criteria_name] = builder
+    return builder
 
 
 def get_builder(criteria: Criteria):
