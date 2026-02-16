@@ -18,6 +18,7 @@ from ..criteria_compat import (
     CorrelatedCriteria,
     DemoGraphicCriteria,
     OccurrenceType,
+    ensure_criteria_compat,
     parse_single_criteria,
 )
 from .common import (
@@ -34,6 +35,7 @@ from .registry import build_events
 def apply_criteria_group(
     events: ir.Table, group: CriteriaGroup | None, ctx: BuildContext
 ) -> ir.Table:
+    ensure_criteria_compat()
     mask = _group_mask(events, group, ctx)
     if mask is None:
         return events

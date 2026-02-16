@@ -9,7 +9,6 @@ from ..io import ExpressionInput, load_expression
 from .options import ExecutionOptions, SchemaName, schema_to_str
 
 if TYPE_CHECKING:
-    import ibis.expr.types as ir
     import pandas as pd
     import polars as pl
 
@@ -38,6 +37,9 @@ class IbisExecutor:
 
     def build(self, expression: ExpressionInput) -> Any:
         """Build a lazy ibis relation for the final cohort rows."""
+        from .criteria_compat import ensure_criteria_compat
+
+        ensure_criteria_compat()
         cohort_expression = load_expression(expression)
         self.close()
         return self._build_native(cohort_expression)
@@ -71,6 +73,9 @@ class IbisExecutor:
         cohort_id: Optional[int] = None,
     ) -> Any:
         """Persist cohort rows to a cohort table and return a backend table handle."""
+        from .criteria_compat import ensure_criteria_compat
+
+        ensure_criteria_compat()
         if append and overwrite:
             raise ValueError(
                 "`append=True` and `overwrite=True` cannot be used together."

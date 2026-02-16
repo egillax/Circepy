@@ -82,6 +82,9 @@ class FrameworkBuilder:
         self._projection_hook = projection_hook or _identity_hook
 
     def __call__(self, criteria: Any, ctx: BuildContext) -> ir.Table:
+        from ..criteria_compat import ensure_criteria_compat
+
+        ensure_criteria_compat()
         self._validate_configured_attrs(criteria)
         state = self._initial_state(criteria, ctx)
 

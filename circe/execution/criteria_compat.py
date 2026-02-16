@@ -158,6 +158,7 @@ CRITERIA_TYPE_MAP_CASEFOLD: dict[str, type[Criteria]] = {
 
 
 def parse_single_criteria(criteria_dict: Any) -> Criteria:
+    ensure_criteria_compat()
     if isinstance(criteria_dict, Criteria):
         return criteria_dict
 
@@ -184,6 +185,7 @@ def parse_single_criteria(criteria_dict: Any) -> Criteria:
 
 
 def parse_criteria_list(criteria_list_data: Any) -> list[Criteria]:
+    ensure_criteria_compat()
     if criteria_list_data is None:
         return []
 
@@ -198,6 +200,3 @@ def parse_criteria_list(criteria_list_data: Any) -> list[Criteria]:
             raise ValueError(f"Invalid criteria wrapper at index {idx}: {exc}") from exc
         criteria_instances.append(parsed)
     return criteria_instances
-
-
-ensure_criteria_compat()

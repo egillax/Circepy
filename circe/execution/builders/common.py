@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional, Sequence, cast
 import ibis
 import ibis.expr.types as ir
 from ibis.expr.api import row_number
+from ibis.expr.datatypes import DataType
 
 from ...cohortdefinition.core import (
     CollapseSettings,
@@ -164,15 +165,23 @@ def apply_date_range(
     if not date_range:
         return table
     expr = table[column]
+
+    def _typed_literal(value: object, dtype: DataType) -> ir.Value:
+        literal = ibis.literal(value)
+        if isinstance(value, str) and (dtype.is_date() or dtype.is_timestamp()):
+            return literal.cast(dtype)
+        return literal
+
+    dtype = expr.type()
     if date_range.op.endswith("bt"):
-        lower = ibis.literal(date_range.value)
-        upper = ibis.literal(date_range.extent)
+        lower = _typed_literal(date_range.value, dtype)
+        upper = _typed_literal(date_range.extent, dtype)
         predicate = expr.between(lower, upper)
         if date_range.op.startswith("!"):
             predicate = ~predicate
     else:
         comparator = _map_operator(date_range.op)
-        operand = ibis.literal(date_range.value)
+        operand = _typed_literal(date_range.value, dtype)
         predicate = comparator(expr, operand)
     return table.filter(predicate)
 

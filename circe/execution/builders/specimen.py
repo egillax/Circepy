@@ -73,7 +73,7 @@ register_framework(
         end_column="specimen_date",
         concept_column="specimen_concept_id",
         start_range_attr="occurrence_start_date",
-        end_range_attr=None,
+        end_range_attr="occurrence_end_date",
         age_column="specimen_date",
         first_position="after_post",
     ),
