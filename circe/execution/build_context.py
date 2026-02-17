@@ -359,6 +359,8 @@ class BuildContext:
             raise ValueError(
                 "`append=True` and `overwrite=True` cannot be used together."
             )
+        if self._options.cohort_id is None:
+            raise ValueError("cohort_id must be set to write cohort rows.")
         target_table = table_name or self._options.target_table
         if not target_table:
             raise ValueError(

@@ -143,6 +143,7 @@ def test_write_rejects_append_and_overwrite_together():
             table="cohort",
             append=True,
             overwrite=True,
+            cohort_id=1,
         )
 
 
@@ -157,7 +158,63 @@ def test_write_cohort_rejects_append_and_overwrite_together():
             table="cohort",
             append=True,
             overwrite=True,
+            cohort_id=1,
         )
+
+
+def test_write_requires_cohort_id():
+    class DummyConn:
+        pass
+
+    executor = IbisExecutor(DummyConn(), ExecutionOptions())
+
+    with pytest.raises(ValueError, match="cohort_id must be set"):
+        executor.write(
+            {"Title": "Missing cohort id"},
+            table="cohort",
+        )
+
+
+def test_write_cohort_requires_cohort_id():
+    class DummyConn:
+        pass
+
+    with pytest.raises(ValueError, match="cohort_id must be set"):
+        write_cohort(
+            {"Title": "Missing cohort id"},
+            DummyConn(),
+            table="cohort",
+        )
+
+
+def test_write_cohort_id_overrides_options(monkeypatch):
+    class DummyConn:
+        pass
+
+    called: dict[str, object] = {}
+
+    def _fake_build_with_context(self, cohort_expression, cohort_id_override=None):
+        called["cohort_id_override"] = cohort_id_override
+
+        class DummyCtx:
+            def write_cohort_table(self, *args, **kwargs):
+                return None
+
+            def close(self):
+                return None
+
+        return object(), DummyCtx()
+
+    monkeypatch.setattr(IbisExecutor, "_build_with_context_native", _fake_build_with_context)
+
+    executor = IbisExecutor(DummyConn(), ExecutionOptions(cohort_id=1))
+    executor.write(
+        {"Title": "Override cohort id"},
+        table="cohort",
+        cohort_id=2,
+    )
+
+    assert called["cohort_id_override"] == 2
 
 
 def test_has_end_strategy_handles_polymorphic_models():

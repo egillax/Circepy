@@ -75,10 +75,17 @@ class IbisExecutor:
             raise ValueError(
                 "`append=True` and `overwrite=True` cannot be used together."
             )
+        effective_cohort_id = (
+            cohort_id if cohort_id is not None else self._options.cohort_id
+        )
+        if effective_cohort_id is None:
+            raise ValueError(
+                "cohort_id must be set (argument or ExecutionOptions.cohort_id) to write cohort rows."
+            )
         cohort_expression = load_expression(expression)
         self.close()
         events, ctx = self._build_with_context_native(
-            cohort_expression, cohort_id_override=cohort_id
+            cohort_expression, cohort_id_override=effective_cohort_id
         )
         self._open_contexts.append(ctx)
         return ctx.write_cohort_table(
@@ -221,6 +228,13 @@ def write_cohort(
     options: Optional[ExecutionOptions] = None,
 ) -> Any:
     """Convenience wrapper for IbisExecutor.write()."""
+    effective_cohort_id = (
+        cohort_id if cohort_id is not None else (options.cohort_id if options else None)
+    )
+    if effective_cohort_id is None:
+        raise ValueError(
+            "cohort_id must be set (argument or ExecutionOptions.cohort_id) to write cohort rows."
+        )
     effective_options = options
     if cohort_id is not None:
         effective_options = replace(options or ExecutionOptions(), cohort_id=cohort_id)
