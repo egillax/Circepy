@@ -7,7 +7,7 @@ from .common import (
     apply_interval_range,
     apply_user_defined_period,
 )
-from .framework import BuilderSpec, BuildState
+from .framework import BuilderSpec, BuildState, CriteriaAccessors, attr
 from .registry import register_framework
 
 
@@ -60,14 +60,14 @@ register_framework(
         start_column="payer_plan_period_start_date",
         end_column="payer_plan_period_end_date",
         concept_from_criteria=False,
-        codeset_attr=None,
-        start_range_attr="period_start_date",
-        end_range_attr="period_end_date",
-        age_attr=None,
-        age_at_start_attr="age_at_start",
-        age_at_end_attr="age_at_end",
-        gender_attr="gender",
-        gender_selection_attr="gender_cs",
+        accessors=CriteriaAccessors(
+            codeset_id=None,
+            start_range=attr("period_start_date"),
+            end_range=attr("period_end_date"),
+            age=None,
+            age_at_start=attr("age_at_start"),
+            age_at_end=attr("age_at_end"),
+        ),
         first_position="after_post",
     ),
     domain_hook=_domain_hook,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from ...cohortdefinition.criteria import DoseEra
 from ..build_context import BuildContext
 from .common import apply_concept_criteria, apply_interval_range, apply_numeric_range
-from .framework import BuilderSpec, BuildState
+from .framework import BuilderSpec, BuildState, CriteriaAccessors, attr
 from .registry import register_framework
 
 
@@ -35,11 +35,13 @@ register_framework(
         start_column="dose_era_start_date",
         end_column="dose_era_end_date",
         concept_column="drug_concept_id",
-        start_range_attr="era_start_date",
-        end_range_attr="era_end_date",
-        age_attr=None,
-        age_at_start_attr="age_at_start",
-        age_at_end_attr="age_at_end",
+        accessors=CriteriaAccessors(
+            start_range=attr("era_start_date"),
+            end_range=attr("era_end_date"),
+            age=None,
+            age_at_start=attr("age_at_start"),
+            age_at_end=attr("age_at_end"),
+        ),
         first_position="after_shared",
     ),
     domain_hook=_domain_hook,

@@ -11,7 +11,7 @@ from .common import (
     apply_provider_specialty_filter,
     project_event_columns,
 )
-from .framework import BuilderSpec, BuildState
+from .framework import BuilderSpec, BuildState, CriteriaAccessors, attr
 from .registry import register_framework
 
 
@@ -86,11 +86,12 @@ register_framework(
         start_column="visit_detail_start_date",
         end_column="visit_detail_end_date",
         concept_column="visit_detail_concept_id",
-        start_range_attr="visit_detail_start_date",
-        end_range_attr="visit_detail_end_date",
+        accessors=CriteriaAccessors(
+            start_range=attr("visit_detail_start_date"),
+            end_range=attr("visit_detail_end_date"),
+            gender=None,
+        ),
         age_column="visit_detail_end_date",
-        gender_attr=None,
-        gender_selection_attr="gender_cs",
         gender_default=[],
         first_position="before_dates",
     ),

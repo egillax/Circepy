@@ -9,7 +9,7 @@ from .common import (
     apply_concept_set_selection,
     coerce_concept_set_selection,
 )
-from .framework import BuilderSpec, BuildState
+from .framework import BuilderSpec, BuildState, CriteriaAccessors
 from .registry import register_framework
 
 logger = logging.getLogger(__name__)
@@ -88,11 +88,8 @@ register_framework(
         start_column="death_date",
         end_column="death_date",
         concept_column="cause_concept_id",
-        start_range_attr="occurrence_start_date",
-        end_range_attr="occurrence_end_date",
-        first_attr=None,
+        accessors=CriteriaAccessors(first=None),
         first_position="never",
-        age_attr="age",
     ),
     domain_hook=_domain_hook,
 )
