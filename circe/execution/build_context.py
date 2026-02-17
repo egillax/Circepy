@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import re
 import time
 import uuid
 import weakref
@@ -129,7 +131,26 @@ class BuildContext:
         self._captured_sql: list[tuple[str, str]] = []
         self._slice_cache: dict[str, ir.Table] = {}
         self._trace_events: list[TraceEvent] = []
+        self._run_id = uuid.uuid4().hex[:4]
+        self._stage_counter = 0
         weakref.finalize(self, self.close)
+
+    def make_stage_name(self, step_key: str) -> str:
+        """
+        Build a backend-safe physical stage name for a semantic step key.
+
+        The returned name is:
+        - normalized to [a-z0-9_]
+        - aggressively truncated for portability
+        - disambiguated via hash + run id + counter
+        """
+        self._stage_counter += 1
+        normalized = re.sub(r"[^A-Za-z0-9_]+", "_", step_key).strip("_").lower()
+        if not normalized:
+            normalized = "stage"
+        base = normalized[:10]
+        digest = hashlib.sha1(step_key.encode("utf-8")).hexdigest()[:4]
+        return f"_stg_{base}_{digest}_{self._run_id}_{self._stage_counter:03d}"
 
     def _table(self, database: Optional[str], name: str) -> ir.Table:
         try:
@@ -176,7 +197,8 @@ class BuildContext:
         artifact for this step.
         """
         step_id = uuid.uuid4().hex[:8]
-        table_name = f"_stage_{label}_{step_id}"
+        step_key = label
+        table_name = self.make_stage_name(step_key)
         backend = self._options.backend
 
         # "temp emulation" means: create a *real* table in a chosen database/schema.
@@ -190,8 +212,11 @@ class BuildContext:
         profile_filename: Path | None = None
         profiling_enabled = False
         if backend == "duckdb" and self._profile_dir is not None:
+            profile_label = re.sub(r"[^A-Za-z0-9_]+", "_", step_key).strip("_").lower()
+            if not profile_label:
+                profile_label = "stage"
             profile_filename = (
-                self._profile_dir / f"ibis_profile_{label}_{step_id}.json"
+                self._profile_dir / f"ibis_profile_{profile_label}_{step_id}.json"
             ).resolve()
             try:
                 escaped = str(profile_filename).replace("'", "''")
