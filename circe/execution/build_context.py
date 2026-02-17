@@ -247,7 +247,12 @@ class BuildContext:
                 overwrite=True,
             )
             if self._options.capture_sql:
-                self._captured_sql.append((table_name, self._conn.compile(expr)))
+                try:
+                    sql = self._conn.compile(expr)
+                except Exception as exc:
+                    _warn(f"could not compile SQL for {label}: {exc}")
+                else:
+                    self._captured_sql.append((table_name, sql))
         finally:
             if profiling_enabled:
                 try:
