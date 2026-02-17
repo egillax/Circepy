@@ -96,6 +96,7 @@ class CohortBuildOptions:
     trace_steps: bool = False
     trace_sql: bool = False
     trace_dir: Optional[str] = None
+    probe_empty_primary_events: bool = True
     backend: Optional[str] = None
     materialize_stages: bool = True
     materialize_codesets: bool = True
@@ -116,6 +117,14 @@ class CodesetResource:
 
 @dataclass(frozen=True)
 class TraceEvent:
+    """
+    Step-level trace record.
+
+    `label` is the semantic step key (for example `primary_events` or
+    `ConditionOccurrence.domain`) and is not the physical table name.
+    `materialized_table` holds the physical stage table name when materialized.
+    """
+
     label: str
     kind: str
     sql: str | None
@@ -123,6 +132,11 @@ class TraceEvent:
     materialized_table: str | None
     started_at: float
     elapsed_ms: float
+
+    @property
+    def step_key(self) -> str:
+        """Alias for `label` to clarify semantic-vs-physical naming."""
+        return self.label
 
 
 class BuildContext:
@@ -374,6 +388,7 @@ class BuildContext:
             if self._trace_path is not None:
                 try:
                     payload = {
+                        "step_key": event.step_key,
                         "label": event.label,
                         "kind": event.kind,
                         "sql": event.sql,

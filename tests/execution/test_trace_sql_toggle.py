@@ -48,6 +48,7 @@ def test_capture_sql_does_not_compile_in_trace_step(monkeypatch):
     events = ctx.trace_events()
     assert len(events) == 1
     assert events[0].label == "capture_only_step"
+    assert events[0].step_key == "capture_only_step"
     assert events[0].sql is None
 
 
@@ -70,4 +71,5 @@ def test_trace_sql_compiles_in_trace_step(monkeypatch):
     events = ctx.trace_events()
     assert len(events) == 1
     assert events[0].label == "trace_sql_step"
+    assert events[0].step_key == "trace_sql_step"
     assert events[0].sql == "SELECT 1"

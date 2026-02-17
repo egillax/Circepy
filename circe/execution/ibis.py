@@ -227,6 +227,7 @@ class IbisExecutor:
             trace_steps=self._options.trace_steps,
             trace_sql=self._options.trace_sql,
             trace_dir=self._options.trace_dir,
+            probe_empty_primary_events=self._options.probe_empty_primary_events,
             backend=backend,
         )
         resource = compile_codesets(

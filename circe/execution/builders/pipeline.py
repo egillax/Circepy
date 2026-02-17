@@ -32,8 +32,14 @@ from .post_processing import apply_censor_window, apply_censoring, apply_inclusi
 from .registry import build_events
 
 def build_primary_events(expression: CohortExpression, ctx: BuildContext):
-    def _maybe_materialize(table: ir.Table, label: str) -> ir.Table:
-        return ctx.maybe_materialize(table, label=label, analyze=True)
+    def _stage(table: ir.Table, label: str) -> ir.Table:
+        return ctx.trace_step(
+            table,
+            label=label,
+            kind="pipeline",
+            materialize=ctx.should_materialize_stages(),
+            analyze=True,
+        )
 
     primary = expression.primary_criteria
     if primary is None or not primary.criteria_list:
@@ -49,9 +55,7 @@ def build_primary_events(expression: CohortExpression, ctx: BuildContext):
     if ctx.should_materialize_stages():
         materialized: list[ir.Table] = []
         for idx, table in enumerate(event_tables, start=1):
-            materialized.append(
-                ctx.maybe_materialize(table, label=f"primary_src_{idx}", analyze=True)
-            )
+            materialized.append(_stage(table, label=f"primary_src_{idx}"))
         event_tables = materialized
     events = event_tables[0]
     for table in event_tables[1:]:
@@ -62,10 +66,10 @@ def build_primary_events(expression: CohortExpression, ctx: BuildContext):
     if _should_limit(primary.primary_limit):
         events = _apply_result_limit(events, primary.primary_limit)
 
-    events = ctx.maybe_materialize(events, label="primary_events", analyze=True)
+    events = _stage(events, label="primary_events")
 
     # Short-circuit the remainder of the pipeline when no primary events exist.
-    if ctx.should_materialize_stages():
+    if ctx.should_materialize_stages() and ctx.options().probe_empty_primary_events:
         primary_exists = True
         try:
             probe = events.limit(1)
@@ -78,29 +82,27 @@ def build_primary_events(expression: CohortExpression, ctx: BuildContext):
 
     events = apply_criteria_group(events, expression.additional_criteria, ctx)
     if expression.additional_criteria:
-        events = ctx.maybe_materialize(
-            events, label="additional_criteria", analyze=True
-        )
+        events = _stage(events, label="additional_criteria")
 
     events = apply_inclusion_rules(events, expression.inclusion_rules, ctx)
     if expression.inclusion_rules:
-        events = ctx.maybe_materialize(events, label="inclusion", analyze=True)
+        events = _stage(events, label="inclusion")
     # Circe ignores QualifiedLimit, so we do the same to preserve parity.
     if _should_limit(expression.expression_limit):
         events = _apply_result_limit(events, expression.expression_limit)
     events = apply_end_strategy(events, expression.end_strategy, ctx)
     if has_end_strategy(expression.end_strategy):
-        events = _maybe_materialize(events, label="strategy_ends")
+        events = _stage(events, label="strategy_ends")
 
     # Censoring should cut the cohort end date, so apply it after end strategy.
     events = apply_censoring(events, expression.censoring_criteria, ctx)
     if expression.censoring_criteria:
-        events = ctx.maybe_materialize(events, label="censoring", analyze=True)
+        events = _stage(events, label="censoring")
     events = apply_censor_window(events, expression.censor_window, ctx)
     events = _drop_aux_columns(events)
     events = collapse_events(events, expression.collapse_settings)
     if expression.collapse_settings and expression.collapse_settings.collapse_type:
-        events = _maybe_materialize(events, label="final_cohort")
+        events = _stage(events, label="final_cohort")
     return events
 
 

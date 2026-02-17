@@ -41,6 +41,7 @@ def test_execution_options_defaults():
     assert options.trace_steps is False
     assert options.trace_sql is False
     assert options.trace_dir is None
+    assert options.probe_empty_primary_events is True
 
 
 def test_schema_to_str_with_tuple_schema():
@@ -397,3 +398,170 @@ def test_write_append_appends_when_target_exists_duckdb():
     result = conn.table(target_table, database="main").execute()
     assert len(result) == 2
     assert set(result["cohort_definition_id"]) == {123}
+
+
+def test_trace_events_include_pipeline_primary_stage_duckdb():
+    ibis = pytest.importorskip("ibis")
+    _ = pytest.importorskip("duckdb")
+
+    conn = ibis.duckdb.connect()
+
+    conn.create_table(
+        "concept",
+        obj=ibis.memtable(
+            {
+                "concept_id": [111, 999],
+                "invalid_reason": [None, "D"],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "concept_ancestor",
+        obj=ibis.memtable(
+            {
+                "ancestor_concept_id": [111],
+                "descendant_concept_id": [111],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "concept_relationship",
+        obj=ibis.memtable(
+            {
+                "concept_id_1": [111],
+                "concept_id_2": [111],
+                "relationship_id": ["Maps to"],
+                "invalid_reason": [""],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "condition_occurrence",
+        obj=ibis.memtable(
+            {
+                "person_id": [1],
+                "condition_occurrence_id": [1001],
+                "condition_concept_id": [111],
+                "condition_start_date": ["2020-01-01"],
+                "condition_end_date": ["2020-01-02"],
+            }
+        ),
+        overwrite=True,
+    )
+
+    cohort = CohortExpression(
+        concept_sets=[
+            ConceptSet(
+                id=1,
+                expression=ConceptSetExpression(
+                    items=[ConceptSetItem(concept=Concept(conceptId=111))]
+                ),
+            )
+        ],
+        primary_criteria=PrimaryCriteria(
+            criteria_list=[ConditionOccurrence(codeset_id=1)],
+        ),
+    )
+
+    with IbisExecutor(
+        conn,
+        ExecutionOptions(materialize_stages=False, trace_steps=True, trace_sql=False),
+    ) as executor:
+        executor.build(cohort)
+        events = executor.trace_events()
+
+    assert any(event.label == "primary_events" for event in events)
+    assert any(
+        event.label == "primary_events" and event.kind == "pipeline" for event in events
+    )
+
+
+def test_probe_empty_primary_events_option_disables_probe_query(monkeypatch):
+    ibis = pytest.importorskip("ibis")
+    _ = pytest.importorskip("duckdb")
+    import ibis.expr.types as ir
+
+    conn = ibis.duckdb.connect()
+
+    conn.create_table(
+        "concept",
+        obj=ibis.memtable(
+            {
+                "concept_id": [111],
+                "invalid_reason": [""],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "concept_ancestor",
+        obj=ibis.memtable(
+            {
+                "ancestor_concept_id": [111],
+                "descendant_concept_id": [111],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "concept_relationship",
+        obj=ibis.memtable(
+            {
+                "concept_id_1": [111],
+                "concept_id_2": [111],
+                "relationship_id": ["Maps to"],
+                "invalid_reason": [""],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "condition_occurrence",
+        obj=ibis.memtable(
+            {
+                "person_id": [1],
+                "condition_occurrence_id": [1001],
+                "condition_concept_id": [111],
+                "condition_start_date": ["2020-01-01"],
+                "condition_end_date": ["2020-01-02"],
+            }
+        ),
+        overwrite=True,
+    )
+
+    cohort = CohortExpression(
+        concept_sets=[
+            ConceptSet(
+                id=1,
+                expression=ConceptSetExpression(
+                    items=[ConceptSetItem(concept=Concept(conceptId=111))]
+                ),
+            )
+        ],
+        primary_criteria=PrimaryCriteria(
+            criteria_list=[ConditionOccurrence(codeset_id=1)],
+        ),
+    )
+
+    original_execute = ir.Expr.execute
+    execute_calls = {"n": 0}
+
+    def _counting_execute(self, *args, **kwargs):
+        execute_calls["n"] += 1
+        return original_execute(self, *args, **kwargs)
+
+    monkeypatch.setattr(ir.Expr, "execute", _counting_execute)
+
+    with IbisExecutor(
+        conn,
+        ExecutionOptions(
+            materialize_stages=True,
+            probe_empty_primary_events=False,
+        ),
+    ) as executor:
+        executor.build(cohort)
+
+    assert execute_calls["n"] == 0

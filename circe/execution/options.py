@@ -31,6 +31,7 @@ class ExecutionOptions:
     trace_steps: bool = False
     trace_sql: bool = False
     trace_dir: Optional[str] = None
+    probe_empty_primary_events: bool = True
 
 
 def schema_to_str(schema: Optional[SchemaName]) -> Optional[str]:
