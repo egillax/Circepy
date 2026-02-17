@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import re
 import time
 import uuid
@@ -19,6 +21,8 @@ from .ibis_compat import table_from_literal_list
 
 Database = Union[str, Tuple[str, str]]
 
+logger = logging.getLogger(__name__)
+
 
 def _qualify(database: Database | None, name: str) -> str:
     """Only for statements were constructing outside of Ibis."""
@@ -34,7 +38,7 @@ def _table(conn: ibis.BaseBackend, database: Database | None, name: str) -> ir.T
 
 
 def _warn(message: str) -> None:
-    print(f"Warning: {message}")
+    logger.warning("%s", message)
 
 
 def _analyze_table(
@@ -133,6 +137,13 @@ class BuildContext:
         self._trace_events: list[TraceEvent] = []
         self._run_id = uuid.uuid4().hex[:4]
         self._stage_counter = 0
+        self._trace_dir: Path | None = None
+        self._trace_path: Path | None = None
+        if options.trace_dir:
+            path = Path(options.trace_dir).resolve()
+            path.mkdir(parents=True, exist_ok=True)
+            self._trace_dir = path
+            self._trace_path = (path / f"ibis_trace_{self._run_id}.jsonl").resolve()
         weakref.finalize(self, self.close)
 
     def make_stage_name(self, step_key: str) -> str:
@@ -245,7 +256,11 @@ class BuildContext:
                     _warn(f"could not disable DuckDB profiling for {label}: {exc}")
 
         if profiling_enabled and profile_filename is not None:
-            print(f"[Profile Captured]: {profile_filename} (Table: {table_name})")
+            logger.info(
+                "[Profile Captured]: %s (Table: %s)",
+                profile_filename,
+                table_name,
+            )
 
         if analyze:
             qualified = _qualify(database, table_name)
@@ -327,17 +342,32 @@ class BuildContext:
 
         elapsed_ms = (time.perf_counter() - timer_start) * 1000.0
         if self._options.trace_steps:
-            self._trace_events.append(
-                TraceEvent(
-                    label=label,
-                    kind=kind,
-                    sql=sql,
-                    materialized=materialized,
-                    materialized_table=materialized_table,
-                    started_at=started_at,
-                    elapsed_ms=elapsed_ms,
-                )
+            event = TraceEvent(
+                label=label,
+                kind=kind,
+                sql=sql,
+                materialized=materialized,
+                materialized_table=materialized_table,
+                started_at=started_at,
+                elapsed_ms=elapsed_ms,
             )
+            self._trace_events.append(event)
+            if self._trace_path is not None:
+                try:
+                    payload = {
+                        "label": event.label,
+                        "kind": event.kind,
+                        "sql": event.sql,
+                        "materialized": event.materialized,
+                        "materialized_table": event.materialized_table,
+                        "started_at": event.started_at,
+                        "elapsed_ms": event.elapsed_ms,
+                    }
+                    self._trace_path.parent.mkdir(parents=True, exist_ok=True)
+                    with self._trace_path.open("a", encoding="utf-8") as handle:
+                        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+                except Exception as exc:
+                    _warn(f"could not write trace event for {label}: {exc}")
         return result
 
     def write_cohort_table(
