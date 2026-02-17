@@ -52,11 +52,10 @@ def build_primary_events(expression: CohortExpression, ctx: BuildContext):
         event_tables.append(table)
     if not event_tables:
         return None
-    if ctx.should_materialize_stages():
-        materialized: list[ir.Table] = []
-        for idx, table in enumerate(event_tables, start=1):
-            materialized.append(_stage(table, label=f"primary_src_{idx}"))
-        event_tables = materialized
+    staged_sources: list[ir.Table] = []
+    for idx, table in enumerate(event_tables, start=1):
+        staged_sources.append(_stage(table, label=f"primary_src_{idx}"))
+    event_tables = staged_sources
     events = event_tables[0]
     for table in event_tables[1:]:
         events = events.union(table, distinct=False)

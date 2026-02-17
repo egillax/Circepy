@@ -149,6 +149,14 @@ executor = IbisExecutor(conn, ExecutionOptions(cdm_schema="main"))
 events = executor.build(cohort)  # lazy ibis relation
 ```
 
+Key execution options:
+
+- `trace_steps=True` enables step-level trace events.
+- `trace_sql=True` includes compiled SQL in trace events.
+- `capture_sql=True` captures SQL for materialized stages.
+- `probe_empty_primary_events` controls an eager `limit(1)` probe used to
+  short-circuit when there are no primary events (`True` by default).
+
 ## What's Included
 
 This package provides a complete Python implementation of CIRCE-BE with:

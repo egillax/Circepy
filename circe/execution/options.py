@@ -31,6 +31,7 @@ class ExecutionOptions:
     trace_steps: bool = False
     trace_sql: bool = False
     trace_dir: Optional[str] = None
+    # Probe `primary_events` with `limit(1)` to short-circuit downstream stages when empty.
     probe_empty_primary_events: bool = True
 
 

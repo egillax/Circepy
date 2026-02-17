@@ -473,6 +473,7 @@ def test_trace_events_include_pipeline_primary_stage_duckdb():
         executor.build(cohort)
         events = executor.trace_events()
 
+    assert any(event.label.startswith("primary_src_") for event in events)
     assert any(event.label == "primary_events" for event in events)
     assert any(
         event.label == "primary_events" and event.kind == "pipeline" for event in events
@@ -565,3 +566,96 @@ def test_probe_empty_primary_events_option_disables_probe_query(monkeypatch):
         executor.build(cohort)
 
     assert execute_calls["n"] == 0
+
+
+def test_append_insert_runtime_error_is_not_swallowed(monkeypatch):
+    ibis = pytest.importorskip("ibis")
+    _ = pytest.importorskip("duckdb")
+
+    conn = ibis.duckdb.connect()
+
+    conn.create_table(
+        "concept",
+        obj=ibis.memtable(
+            {
+                "concept_id": [111, 999],
+                "invalid_reason": [None, "D"],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "concept_ancestor",
+        obj=ibis.memtable(
+            {
+                "ancestor_concept_id": [111],
+                "descendant_concept_id": [111],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "concept_relationship",
+        obj=ibis.memtable(
+            {
+                "concept_id_1": [111],
+                "concept_id_2": [111],
+                "relationship_id": ["Maps to"],
+                "invalid_reason": [""],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "condition_occurrence",
+        obj=ibis.memtable(
+            {
+                "person_id": [1],
+                "condition_occurrence_id": [1001],
+                "condition_concept_id": [111],
+                "condition_start_date": ["2020-01-01"],
+                "condition_end_date": ["2020-01-02"],
+            }
+        ),
+        overwrite=True,
+    )
+
+    cohort = CohortExpression(
+        concept_sets=[
+            ConceptSet(
+                id=1,
+                expression=ConceptSetExpression(
+                    items=[ConceptSetItem(concept=Concept(conceptId=111))]
+                ),
+            )
+        ],
+        primary_criteria=PrimaryCriteria(
+            criteria_list=[ConditionOccurrence(codeset_id=1)],
+        ),
+    )
+
+    target_table = f"cohort_append_{uuid.uuid4().hex[:8]}"
+    options = ExecutionOptions(cohort_id=123, materialize_stages=False)
+
+    with IbisExecutor(conn, options) as executor:
+        executor.write(
+            cohort,
+            table=target_table,
+            schema="main",
+            overwrite=True,
+        )
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("insert boom")
+
+    monkeypatch.setattr(conn, "insert", _boom)
+
+    with IbisExecutor(conn, options) as executor:
+        with pytest.raises(RuntimeError, match="insert boom"):
+            executor.write(
+                cohort,
+                table=target_table,
+                schema="main",
+                append=True,
+                overwrite=False,
+            )

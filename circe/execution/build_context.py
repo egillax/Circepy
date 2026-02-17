@@ -96,6 +96,7 @@ class CohortBuildOptions:
     trace_steps: bool = False
     trace_sql: bool = False
     trace_dir: Optional[str] = None
+    # Probe `primary_events` with `limit(1)` to short-circuit downstream stages when empty.
     probe_empty_primary_events: bool = True
     backend: Optional[str] = None
     materialize_stages: bool = True
@@ -453,31 +454,47 @@ class BuildContext:
         obj = result
         create_overwrite = overwrite
         if append:
-            # Prefer backend-native append semantics when supported.
+            existing: ir.Table | None = None
             try:
-                self._conn.insert(
-                    target_table,
-                    result,
-                    database=target_db,
-                    overwrite=False,
-                )
-            except Exception:
-                # Fallback for backends without insert support or missing target tables.
+                existing = _table(self._conn, target_db, target_table)
+            except (
+                ibis_exc.IbisError,
+                TypeError,
+                ValueError,
+                AttributeError,
+                NotImplementedError,
+            ):
+                existing = None
+
+            # Prefer backend-native append semantics when supported.
+            insert_method = getattr(self._conn, "insert", None)
+            if existing is not None and callable(insert_method):
                 try:
-                    existing = _table(self._conn, target_db, target_table)
-                    obj = existing.union(result, distinct=False)
-                    create_overwrite = True
+                    insert_method(
+                        target_table,
+                        result,
+                        database=target_db,
+                        overwrite=False,
+                    )
                 except (
-                    ibis_exc.IbisError,
+                    ibis_exc.UnsupportedOperationError,
+                    ibis_exc.OperationNotDefinedError,
+                    NotImplementedError,
+                    AttributeError,
                     TypeError,
                     ValueError,
-                    AttributeError,
-                    NotImplementedError,
                 ):
-                    obj = result
-                    create_overwrite = False
+                    # Insert is not supported for this backend; fallback to rewrite.
+                    obj = existing.union(result, distinct=False)
+                    create_overwrite = True
+                else:
+                    return _table(self._conn, target_db, target_table)
+            elif existing is not None:
+                obj = existing.union(result, distinct=False)
+                create_overwrite = True
             else:
-                return _table(self._conn, target_db, target_table)
+                obj = result
+                create_overwrite = False
 
         self._conn.create_table(
             target_table,

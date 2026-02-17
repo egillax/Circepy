@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 
@@ -73,3 +75,36 @@ def test_trace_sql_compiles_in_trace_step(monkeypatch):
     assert events[0].label == "trace_sql_step"
     assert events[0].step_key == "trace_sql_step"
     assert events[0].sql == "SELECT 1"
+
+
+def test_trace_file_payload_contains_step_key_and_label(tmp_path):
+    ibis = pytest.importorskip("ibis")
+    _ = pytest.importorskip("duckdb")
+
+    from circe.execution.build_context import BuildContext, CohortBuildOptions
+
+    conn = ibis.duckdb.connect()
+    conn.create_table(
+        "codesets",
+        obj=ibis.memtable({"codeset_id": [0], "concept_id": [0]}),
+        overwrite=True,
+    )
+    ctx = BuildContext(
+        conn,
+        CohortBuildOptions(
+            materialize_stages=False,
+            materialize_codesets=False,
+            trace_steps=True,
+            trace_dir=str(tmp_path),
+        ),
+        conn.table("codesets"),
+    )
+
+    expr = ibis.memtable({"x": [1]})
+    ctx.trace_step(expr, label="payload_step")
+
+    trace_files = sorted(tmp_path.glob("ibis_trace_*.jsonl"))
+    assert len(trace_files) == 1
+    payload = json.loads(trace_files[0].read_text(encoding="utf-8").splitlines()[0])
+    assert payload["label"] == "payload_step"
+    assert payload["step_key"] == "payload_step"
