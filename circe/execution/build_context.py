@@ -344,9 +344,7 @@ class BuildContext:
         timer_start = time.perf_counter()
 
         sql: str | None = None
-        if self._options.trace_steps and (
-            self._options.trace_sql or self._options.capture_sql
-        ):
+        if self._options.trace_steps and self._options.trace_sql:
             try:
                 sql = self._conn.compile(expr)
             except Exception:
