@@ -66,11 +66,13 @@ def build_primary_events(expression: CohortExpression, ctx: BuildContext):
 
     # Short-circuit the remainder of the pipeline when no primary events exist.
     if ctx.should_materialize_stages():
+        primary_exists = True
         try:
-            primary_count = events.count().execute()
+            probe = events.limit(1)
+            primary_exists = bool(len(probe.execute()))
         except (ibis_exc.IbisError, RuntimeError, ValueError, TypeError):
-            primary_count = None
-        if primary_count == 0:
+            primary_exists = True
+        if not primary_exists:
             events = _drop_aux_columns(events)
             return events.limit(0)
 
