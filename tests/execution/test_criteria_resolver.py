@@ -5,6 +5,7 @@ from circe.execution.criteria.resolve import (
     concept_id_column_for,
     end_date_column_for,
     primary_key_column_for,
+    source_concept_id_candidates_for,
     start_date_column_for,
     table_name_for,
 )
@@ -30,3 +31,13 @@ def test_resolver_date_overrides():
     assert start_date_column_for(VisitDetail) == "visit_detail_start_date"
     assert end_date_column_for(VisitDetail) == "visit_detail_end_date"
 
+
+def test_source_concept_id_candidates_visit_detail():
+    candidates = source_concept_id_candidates_for(VisitDetail)
+    assert candidates[0] == "visit_detail_source_concept_id"
+    assert "visit_source_concept_id" in candidates
+
+
+def test_source_concept_id_candidates_death():
+    candidates = source_concept_id_candidates_for(Death)
+    assert candidates[0] == "cause_source_concept_id"

@@ -49,6 +49,10 @@ _END_DATE_OVERRIDES: dict[str, str] = {
     "PayerPlanPeriod": "payer_plan_period_end_date",
 }
 
+_SOURCE_CONCEPT_ID_OVERRIDES: dict[str, str] = {
+    "Death": "cause_source_concept_id",
+}
+
 
 def _criteria_type(criteria: CriteriaRef) -> type[Criteria]:
     return criteria if isinstance(criteria, type) else type(criteria)
@@ -104,6 +108,34 @@ def concept_id_column_for(criteria: CriteriaRef) -> str:
 
 
 def source_concept_id_column_for(criteria: CriteriaRef) -> str:
-    prefix = table_name_for(criteria).split("_")[0]
-    return f"{prefix}_source_concept_id"
+    candidates = source_concept_id_candidates_for(criteria)
+    return candidates[0]
 
+
+def source_concept_id_candidates_for(criteria: CriteriaRef) -> list[str]:
+    """
+    Return best-effort candidates for the CDM source concept column.
+
+    This exists because CDM tables are not consistent:
+    - most tables use a domain prefix: `drug_source_concept_id`
+    - some use full table names: `visit_detail_source_concept_id`
+    - Death uses `cause_source_concept_id`
+    """
+
+    cls_name = _criteria_type(criteria).__name__
+    overridden = _SOURCE_CONCEPT_ID_OVERRIDES.get(cls_name)
+    table_name = table_name_for(criteria)
+    prefix = table_name.split("_")[0]
+    candidates = [
+        overridden,
+        f"{table_name}_source_concept_id",
+        f"{prefix}_source_concept_id",
+    ]
+    output: list[str] = []
+    for name in candidates:
+        if not name:
+            continue
+        if name in output:
+            continue
+        output.append(name)
+    return output

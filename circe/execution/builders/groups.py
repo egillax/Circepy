@@ -23,7 +23,7 @@ from ..criteria.parse import (
 from ..criteria.resolve import (
     concept_id_column_for,
     primary_key_column_for,
-    source_concept_id_column_for,
+    source_concept_id_candidates_for,
     table_name_for,
 )
 from .common import (
@@ -402,7 +402,6 @@ _COUNT_COLUMN_MAPPING: dict[CriteriaColumn, str] = {
 
 _COUNT_COLUMN_SOURCES: dict[CriteriaColumn, Callable[[Criteria], str]] = {
     CriteriaColumn.DOMAIN_CONCEPT: concept_id_column_for,
-    CriteriaColumn.DOMAIN_SOURCE_CONCEPT: source_concept_id_column_for,
 }
 
 
@@ -438,12 +437,7 @@ def _attach_count_columns(
 ) -> ir.Table:
     if not count_column_name or not count_column_enum:
         return events
-    source_getter = _COUNT_COLUMN_SOURCES.get(count_column_enum)
-    if source_getter is None:
-        return events
-    source_column = source_getter(criteria_model)
-    if source_column is None:
-        return events
+
     table_name = table_name_for(criteria_model)
     try:
         domain_table = ctx.table(table_name)
@@ -455,14 +449,36 @@ def _attach_count_columns(
         NotImplementedError,
     ):
         return events
-    if source_column not in domain_table.columns:
+
+    if count_column_enum is CriteriaColumn.DOMAIN_SOURCE_CONCEPT:
+        candidates = source_concept_id_candidates_for(criteria_model)
+    else:
+        source_getter = _COUNT_COLUMN_SOURCES.get(count_column_enum)
+        if source_getter is None:
+            return events
+        candidates = [source_getter(criteria_model)]
+
+    resolved_source_column: str | None = None
+    for candidate in candidates:
+        if candidate and candidate in domain_table.columns:
+            resolved_source_column = candidate
+            break
+
+    if resolved_source_column is None:
+        if count_column_enum is CriteriaColumn.DOMAIN_SOURCE_CONCEPT:
+            raise ValueError(
+                f"{criteria_model.__class__.__name__} requested DOMAIN_SOURCE_CONCEPT "
+                "counting but no suitable `*_source_concept_id` column exists. "
+                f"Tried: {candidates}"
+            )
         return events
+
     primary_key = primary_key_column_for(criteria_model)
     if primary_key not in domain_table.columns:
         return events
     lookup = domain_table.select(
         domain_table[primary_key].name("_corr_join_key"),
-        domain_table[source_column].name(count_column_name),
+        domain_table[resolved_source_column].name(count_column_name),
     )
     augmented = events.join(
         lookup, events.event_id == lookup._corr_join_key, how="left"
