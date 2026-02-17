@@ -22,6 +22,25 @@ def _identity_hook(state: BuildState, criteria: Any, ctx: BuildContext) -> Build
     return state
 
 
+def _run_step(
+    state: BuildState,
+    *,
+    ctx: BuildContext,
+    step_key: str,
+    kind: str,
+    fn,
+    materialize: bool | None = None,
+) -> BuildState:
+    state = fn(state)
+    table = ctx.trace_step(
+        state.table,
+        label=step_key,
+        kind=kind,
+        materialize=materialize,
+    )
+    return replace(state, table=table)
+
+
 class FrameworkBuilder:
     """
     Enterprise-style builder orchestrator.
@@ -49,80 +68,80 @@ class FrameworkBuilder:
         criteria_label = criteria.__class__.__name__
         state = initial_state(criteria, ctx, spec)
 
-        state = apply_codeset(state, criteria, ctx, spec)
-        state = replace(
+        state = _run_step(
             state,
-            table=ctx.trace_step(
-                state.table, label=f"{criteria_label}.codeset", kind="filter"
-            ),
+            ctx=ctx,
+            step_key=f"{criteria_label}.codeset_filter",
+            kind="filter",
+            fn=lambda s: apply_codeset(s, criteria, ctx, spec),
         )
 
-        state = apply_first(state, criteria, when="before_dates", spec=spec)
-        state = replace(
+        state = _run_step(
             state,
-            table=ctx.trace_step(
-                state.table, label=f"{criteria_label}.first.before_dates", kind="first"
-            ),
+            ctx=ctx,
+            step_key=f"{criteria_label}.first.before_dates",
+            kind="first",
+            fn=lambda s: apply_first(s, criteria, when="before_dates", spec=spec),
         )
-        state = apply_date_filters(state, criteria, spec=spec)
-        state = replace(
+        state = _run_step(
             state,
-            table=ctx.trace_step(
-                state.table, label=f"{criteria_label}.date_range", kind="filter"
-            ),
-        )
-
-        state = self._domain_hook(state, criteria, ctx)
-        state = replace(
-            state,
-            table=ctx.trace_step(
-                state.table, label=f"{criteria_label}.domain", kind="domain"
-            ),
-        )
-        state = apply_first(state, criteria, when="after_domain", spec=spec)
-        state = replace(
-            state,
-            table=ctx.trace_step(
-                state.table, label=f"{criteria_label}.first.after_domain", kind="first"
-            ),
+            ctx=ctx,
+            step_key=f"{criteria_label}.date_range",
+            kind="filter",
+            fn=lambda s: apply_date_filters(s, criteria, spec=spec),
         )
 
-        state = apply_shared_person_filters(state, criteria, ctx, spec=spec)
-        state = replace(
+        state = _run_step(
             state,
-            table=ctx.trace_step(
-                state.table, label=f"{criteria_label}.shared", kind="filter"
-            ),
+            ctx=ctx,
+            step_key=f"{criteria_label}.domain",
+            kind="domain",
+            fn=lambda s: self._domain_hook(s, criteria, ctx),
         )
-        state = apply_first(state, criteria, when="after_shared", spec=spec)
-        state = replace(
+        state = _run_step(
             state,
-            table=ctx.trace_step(
-                state.table, label=f"{criteria_label}.first.after_shared", kind="first"
-            ),
-        )
-
-        state = self._post_hook(state, criteria, ctx)
-        state = replace(
-            state,
-            table=ctx.trace_step(
-                state.table, label=f"{criteria_label}.post", kind="post"
-            ),
-        )
-        state = apply_first(state, criteria, when="after_post", spec=spec)
-        state = replace(
-            state,
-            table=ctx.trace_step(
-                state.table, label=f"{criteria_label}.first.after_post", kind="first"
-            ),
+            ctx=ctx,
+            step_key=f"{criteria_label}.first.after_domain",
+            kind="first",
+            fn=lambda s: apply_first(s, criteria, when="after_domain", spec=spec),
         )
 
-        state = self._projection_hook(state, criteria, ctx)
-        state = replace(
+        state = _run_step(
             state,
-            table=ctx.trace_step(
-                state.table, label=f"{criteria_label}.projection", kind="projection"
-            ),
+            ctx=ctx,
+            step_key=f"{criteria_label}.shared",
+            kind="filter",
+            fn=lambda s: apply_shared_person_filters(s, criteria, ctx, spec=spec),
+        )
+        state = _run_step(
+            state,
+            ctx=ctx,
+            step_key=f"{criteria_label}.first.after_shared",
+            kind="first",
+            fn=lambda s: apply_first(s, criteria, when="after_shared", spec=spec),
+        )
+
+        state = _run_step(
+            state,
+            ctx=ctx,
+            step_key=f"{criteria_label}.post",
+            kind="post",
+            fn=lambda s: self._post_hook(s, criteria, ctx),
+        )
+        state = _run_step(
+            state,
+            ctx=ctx,
+            step_key=f"{criteria_label}.first.after_post",
+            kind="first",
+            fn=lambda s: apply_first(s, criteria, when="after_post", spec=spec),
+        )
+
+        state = _run_step(
+            state,
+            ctx=ctx,
+            step_key=f"{criteria_label}.projection",
+            kind="projection",
+            fn=lambda s: self._projection_hook(s, criteria, ctx),
         )
 
         events = standardize(state)
