@@ -14,12 +14,17 @@ from ...cohortdefinition.criteria import (
     VisitDetail,
 )
 from ..build_context import BuildContext
-from ..criteria_compat import (
+from ..criteria.parse import (
     CorrelatedCriteria,
     DemoGraphicCriteria,
     OccurrenceType,
-    ensure_criteria_compat,
     parse_single_criteria,
+)
+from ..criteria.resolve import (
+    concept_id_column_for,
+    primary_key_column_for,
+    source_concept_id_column_for,
+    table_name_for,
 )
 from .common import (
     apply_age_filter,
@@ -35,7 +40,6 @@ from .registry import build_events
 def apply_criteria_group(
     events: ir.Table, group: CriteriaGroup | None, ctx: BuildContext
 ) -> ir.Table:
-    ensure_criteria_compat()
     mask = _group_mask(events, group, ctx)
     if mask is None:
         return events
@@ -397,10 +401,8 @@ _COUNT_COLUMN_MAPPING: dict[CriteriaColumn, str] = {
 
 
 _COUNT_COLUMN_SOURCES: dict[CriteriaColumn, Callable[[Criteria], str]] = {
-    CriteriaColumn.DOMAIN_CONCEPT: lambda criteria: criteria.get_concept_id_column(),
-    CriteriaColumn.DOMAIN_SOURCE_CONCEPT: lambda criteria: _source_concept_column(
-        criteria
-    ),
+    CriteriaColumn.DOMAIN_CONCEPT: concept_id_column_for,
+    CriteriaColumn.DOMAIN_SOURCE_CONCEPT: source_concept_id_column_for,
 }
 
 
@@ -426,11 +428,6 @@ def _resolve_count_column(occurrence):
     return _COUNT_COLUMN_MAPPING.get(enum_value), enum_value
 
 
-def _source_concept_column(criteria) -> str:
-    prefix = criteria.snake_case_class_name().split("_")[0]
-    return f"{prefix}_source_concept_id"
-
-
 def _attach_count_columns(
     events: ir.Table,
     criteria_model,
@@ -447,7 +444,7 @@ def _attach_count_columns(
     source_column = source_getter(criteria_model)
     if source_column is None:
         return events
-    table_name = criteria_model.snake_case_class_name()
+    table_name = table_name_for(criteria_model)
     try:
         domain_table = ctx.table(table_name)
     except (
@@ -460,7 +457,7 @@ def _attach_count_columns(
         return events
     if source_column not in domain_table.columns:
         return events
-    primary_key = criteria_model.get_primary_key_column()
+    primary_key = primary_key_column_for(criteria_model)
     if primary_key not in domain_table.columns:
         return events
     lookup = domain_table.select(

@@ -18,7 +18,7 @@ from circe.cohortdefinition import (
     VisitDetail,
 )
 from circe.execution import ExecutionOptions, IbisExecutor
-from circe.execution.criteria_compat import parse_single_criteria
+from circe.execution.criteria.parse import parse_single_criteria
 from circe.execution.ibis import write_cohort
 from circe.execution.options import schema_to_str
 from circe.io import load_expression
@@ -83,12 +83,20 @@ def test_ibis_executor_missing_optional_dependencies(monkeypatch):
 
 
 def test_criteria_compat_methods_available():
+    from circe.execution.criteria.resolve import (
+        concept_id_column_for,
+        end_date_column_for,
+        primary_key_column_for,
+        start_date_column_for,
+    )
+
     criteria = DrugExposure()
 
-    assert criteria.get_primary_key_column() == "drug_exposure_id"
-    assert criteria.get_start_date_column() == "drug_exposure_start_date"
-    assert criteria.get_end_date_column() == "drug_exposure_end_date"
-    assert criteria.get_concept_id_column() == "drug_concept_id"
+    assert primary_key_column_for(criteria) == "drug_exposure_id"
+    assert start_date_column_for(criteria) == "drug_exposure_start_date"
+    assert end_date_column_for(criteria) == "drug_exposure_end_date"
+    assert concept_id_column_for(criteria) == "drug_concept_id"
+
 
 
 def test_parse_single_criteria_wrapper():
