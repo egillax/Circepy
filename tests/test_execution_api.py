@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 
 import pytest
@@ -305,3 +306,94 @@ def test_ibis_executor_build_smoke_duckdb():
         "end_date",
         "visit_occurrence_id",
     }
+
+
+def test_write_append_appends_when_target_exists_duckdb():
+    ibis = pytest.importorskip("ibis")
+    _ = pytest.importorskip("duckdb")
+
+    conn = ibis.duckdb.connect()
+
+    conn.create_table(
+        "concept",
+        obj=ibis.memtable(
+            {
+                "concept_id": [111, 999],
+                "invalid_reason": [None, "D"],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "concept_ancestor",
+        obj=ibis.memtable(
+            {
+                "ancestor_concept_id": [111],
+                "descendant_concept_id": [111],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "concept_relationship",
+        obj=ibis.memtable(
+            {
+                "concept_id_1": [111],
+                "concept_id_2": [111],
+                "relationship_id": ["Maps to"],
+                "invalid_reason": [""],
+            }
+        ),
+        overwrite=True,
+    )
+    conn.create_table(
+        "condition_occurrence",
+        obj=ibis.memtable(
+            {
+                "person_id": [1],
+                "condition_occurrence_id": [1001],
+                "condition_concept_id": [111],
+                "condition_start_date": ["2020-01-01"],
+                "condition_end_date": ["2020-01-02"],
+            }
+        ),
+        overwrite=True,
+    )
+
+    cohort = CohortExpression(
+        concept_sets=[
+            ConceptSet(
+                id=1,
+                expression=ConceptSetExpression(
+                    items=[ConceptSetItem(concept=Concept(conceptId=111))]
+                ),
+            )
+        ],
+        primary_criteria=PrimaryCriteria(
+            criteria_list=[ConditionOccurrence(codeset_id=1)],
+        ),
+    )
+
+    target_table = f"cohort_append_{uuid.uuid4().hex[:8]}"
+    options = ExecutionOptions(cohort_id=123, materialize_stages=False)
+
+    with IbisExecutor(conn, options) as executor:
+        executor.write(
+            cohort,
+            table=target_table,
+            schema="main",
+            overwrite=True,
+        )
+
+    with IbisExecutor(conn, options) as executor:
+        executor.write(
+            cohort,
+            table=target_table,
+            schema="main",
+            append=True,
+            overwrite=False,
+        )
+
+    result = conn.table(target_table, database="main").execute()
+    assert len(result) == 2
+    assert set(result["cohort_definition_id"]) == {123}

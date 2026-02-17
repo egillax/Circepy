@@ -66,6 +66,22 @@ def _drop_table_safely(
         _warn(f"could not drop {warning_label}: {exc}")
 
 
+def _finalize_build_context(
+    ctx_ref: weakref.ReferenceType["BuildContext"],
+) -> None:
+    ctx = ctx_ref()
+    if ctx is not None:
+        ctx.close()
+
+
+def _finalize_codeset_resource(
+    resource_ref: weakref.ReferenceType["CodesetResource"],
+) -> None:
+    resource = resource_ref()
+    if resource is not None:
+        resource.cleanup()
+
+
 @dataclass(frozen=True)
 class CohortBuildOptions:
     cdm_schema: Optional[str] = None
@@ -144,7 +160,7 @@ class BuildContext:
             path.mkdir(parents=True, exist_ok=True)
             self._trace_dir = path
             self._trace_path = (path / f"ibis_trace_{self._run_id}.jsonl").resolve()
-        weakref.finalize(self, self.close)
+        weakref.finalize(self, _finalize_build_context, weakref.ref(self))
 
     def make_stage_name(self, step_key: str) -> str:
         """
@@ -422,25 +438,40 @@ class BuildContext:
         )
 
         obj = result
+        create_overwrite = overwrite
         if append:
+            # Prefer backend-native append semantics when supported.
             try:
-                existing = _table(self._conn, target_db, target_table)
-                obj = existing.union(result, distinct=False)
-            except (
-                ibis_exc.IbisError,
-                TypeError,
-                ValueError,
-                AttributeError,
-                NotImplementedError,
-            ):
-                obj = result
+                self._conn.insert(
+                    target_table,
+                    result,
+                    database=target_db,
+                    overwrite=False,
+                )
+            except Exception:
+                # Fallback for backends without insert support or missing target tables.
+                try:
+                    existing = _table(self._conn, target_db, target_table)
+                    obj = existing.union(result, distinct=False)
+                    create_overwrite = True
+                except (
+                    ibis_exc.IbisError,
+                    TypeError,
+                    ValueError,
+                    AttributeError,
+                    NotImplementedError,
+                ):
+                    obj = result
+                    create_overwrite = False
+            else:
+                return _table(self._conn, target_db, target_table)
 
         self._conn.create_table(
             target_table,
             obj=obj,
             database=target_db,
             temp=False,
-            overwrite=overwrite,
+            overwrite=create_overwrite,
         )
         return _table(self._conn, target_db, target_table)
 
@@ -727,7 +758,7 @@ def _materialize_codesets(
             _warn(f"could not analyze codeset table {qualified}: {exc}")
 
     resource = CodesetResource(table=table, _dropper=_drop)
-    weakref.finalize(resource, resource.cleanup)
+    weakref.finalize(resource, _finalize_codeset_resource, weakref.ref(resource))
     return resource
 
 
