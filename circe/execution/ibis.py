@@ -11,6 +11,7 @@ from .options import ExecutionOptions, SchemaName, schema_to_str
 if TYPE_CHECKING:
     import pandas as pd
     import polars as pl
+    from .build_context import TraceEvent
 
 
 class IbisExecutor:
@@ -97,6 +98,14 @@ class IbisExecutor:
                 captured.extend(ctx.captured_sql())
         return captured
 
+    def trace_events(self) -> List["TraceEvent"]:
+        """Return step-level trace events when trace_steps is enabled."""
+        events: List["TraceEvent"] = []
+        for ctx in self._open_contexts:
+            if hasattr(ctx, "trace_events"):
+                events.extend(ctx.trace_events())
+        return events
+
     def close(self) -> None:
         """Release temporary resources held by execution contexts."""
         while self._open_contexts:
@@ -149,6 +158,9 @@ class IbisExecutor:
             temp_emulation_schema=schema_to_str(self._options.temp_emulation_schema),
             profile_dir=self._options.profile_dir,
             capture_sql=self._options.capture_sql,
+            trace_steps=self._options.trace_steps,
+            trace_sql=self._options.trace_sql,
+            trace_dir=self._options.trace_dir,
             backend=backend,
         )
         resource = compile_codesets(

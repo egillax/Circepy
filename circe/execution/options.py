@@ -28,6 +28,10 @@ class ExecutionOptions:
     capture_sql: bool = False
     profile_dir: Optional[str] = None
 
+    trace_steps: bool = False
+    trace_sql: bool = False
+    trace_dir: Optional[str] = None
+
 
 def schema_to_str(schema: Optional[SchemaName]) -> Optional[str]:
     """Normalize schema names to a string representation."""

@@ -37,6 +37,9 @@ def test_execution_options_defaults():
     assert options.temp_emulation_schema is None
     assert options.capture_sql is False
     assert options.profile_dir is None
+    assert options.trace_steps is False
+    assert options.trace_sql is False
+    assert options.trace_dir is None
 
 
 def test_schema_to_str_with_tuple_schema():

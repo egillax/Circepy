@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import uuid
 import weakref
 from dataclasses import dataclass
@@ -70,6 +71,9 @@ class CohortBuildOptions:
     temp_emulation_schema: Optional[str] = None
     profile_dir: Optional[str] = None
     capture_sql: bool = False
+    trace_steps: bool = False
+    trace_sql: bool = False
+    trace_dir: Optional[str] = None
     backend: Optional[str] = None
     materialize_stages: bool = True
     materialize_codesets: bool = True
@@ -86,6 +90,17 @@ class CodesetResource:
                 self._dropper()
             finally:
                 self._dropper = None
+
+
+@dataclass(frozen=True)
+class TraceEvent:
+    label: str
+    kind: str
+    sql: str | None
+    materialized: bool
+    materialized_table: str | None
+    started_at: float
+    elapsed_ms: float
 
 
 class BuildContext:
@@ -113,6 +128,7 @@ class BuildContext:
             self._profile_dir = path
         self._captured_sql: list[tuple[str, str]] = []
         self._slice_cache: dict[str, ir.Table] = {}
+        self._trace_events: list[TraceEvent] = []
         weakref.finalize(self, self.close)
 
     def _table(self, database: Optional[str], name: str) -> ir.Table:
@@ -147,14 +163,14 @@ class BuildContext:
     def cache_correlated(self, key: str, table: ir.Table) -> None:
         self._correlated_cache[key] = table
 
-    def materialize(
+    def _materialize_impl(
         self,
         expr: ir.Table,
         *,
         label: str,
         temp: bool = True,
         analyze: bool = True,
-    ) -> ir.Table:
+    ) -> tuple[ir.Table, str]:
         """
         Materialize an Ibis expression, capturing a unique DuckDB profiling
         artifact for this step.
@@ -222,7 +238,18 @@ class BuildContext:
             )
 
         self.register_cleanup(_drop)
-        return _table(self._conn, database, table_name)
+        return _table(self._conn, database, table_name), table_name
+
+    def materialize(
+        self,
+        expr: ir.Table,
+        *,
+        label: str,
+        temp: bool = True,
+        analyze: bool = True,
+    ) -> ir.Table:
+        table, _ = self._materialize_impl(expr, label=label, temp=temp, analyze=analyze)
+        return table
 
     def should_materialize_stages(self) -> bool:
         return bool(self._options.materialize_stages)
@@ -238,6 +265,55 @@ class BuildContext:
         if not self.should_materialize_stages():
             return expr
         return self.materialize(expr, label=label, temp=temp, analyze=analyze)
+
+    def trace_step(
+        self,
+        expr: ir.Table,
+        *,
+        label: str,
+        kind: str = "transform",
+        materialize: bool | None = None,
+        temp: bool = True,
+        analyze: bool = True,
+    ) -> ir.Table:
+        if not self._options.trace_steps and materialize is not True:
+            return expr
+
+        started_at = time.time()
+        timer_start = time.perf_counter()
+
+        sql: str | None = None
+        if self._options.trace_steps and (
+            self._options.trace_sql or self._options.capture_sql
+        ):
+            try:
+                sql = self._conn.compile(expr)
+            except Exception:
+                sql = None
+
+        materialized = False
+        materialized_table: str | None = None
+        result = expr
+        if materialize is True:
+            result, materialized_table = self._materialize_impl(
+                expr, label=label, temp=temp, analyze=analyze
+            )
+            materialized = True
+
+        elapsed_ms = (time.perf_counter() - timer_start) * 1000.0
+        if self._options.trace_steps:
+            self._trace_events.append(
+                TraceEvent(
+                    label=label,
+                    kind=kind,
+                    sql=sql,
+                    materialized=materialized,
+                    materialized_table=materialized_table,
+                    started_at=started_at,
+                    elapsed_ms=elapsed_ms,
+                )
+            )
+        return result
 
     def write_cohort_table(
         self,
@@ -320,6 +396,9 @@ class BuildContext:
     def captured_sql(self) -> list[tuple[str, str]]:
         return list(self._captured_sql)
 
+    def trace_events(self) -> list[TraceEvent]:
+        return list(self._trace_events)
+
     def register_cleanup(self, callback: Callable[[], None]):
         self._cleanup_callbacks.append(callback)
 
@@ -353,6 +432,7 @@ class BuildContext:
                 _warn(f"cleanup callback failed: {exc}")
         self._captured_sql.clear()
         self._slice_cache.clear()
+        self._trace_events.clear()
 
 
 def compile_codesets(
