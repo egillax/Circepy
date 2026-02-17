@@ -3,7 +3,6 @@ from __future__ import annotations
 import ibis
 import ibis.common.exceptions as ibis_exc
 import ibis.expr.types as ir
-import polars as pl
 
 from ...cohortdefinition import CohortExpression
 from ..build_context import BuildContext
@@ -31,15 +30,6 @@ from .common import (
 from .groups import apply_criteria_group
 from .post_processing import apply_censor_window, apply_censoring, apply_inclusion_rules
 from .registry import build_events
-
-OUTPUT_SCHEMA = {
-    "person_id": pl.Int64,
-    "event_id": pl.Int64,
-    "start_date": pl.Datetime,
-    "end_date": pl.Datetime,
-    "visit_occurrence_id": pl.Int64,
-}
-
 
 def build_primary_events(expression: CohortExpression, ctx: BuildContext):
     def _maybe_materialize(table: ir.Table, label: str) -> ir.Table:
@@ -110,15 +100,6 @@ def build_primary_events(expression: CohortExpression, ctx: BuildContext):
     if expression.collapse_settings and expression.collapse_settings.collapse_type:
         events = _maybe_materialize(events, label="final_cohort")
     return events
-
-
-def build_primary_events_polars(
-    expression: CohortExpression, ctx: BuildContext
-) -> pl.DataFrame:
-    events = build_primary_events(expression, ctx)
-    if events is None:
-        return pl.DataFrame(schema=OUTPUT_SCHEMA)
-    return events.to_polars()
 
 
 def _assign_primary_event_ids(events):
