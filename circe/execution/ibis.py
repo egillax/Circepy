@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, List, Optional
 
 from ..io import ExpressionInput, load_expression
+from .plugin_loader import PluginNotFoundError, load_plugin
+from .plugins import COLLECTOR_ENTRYPOINT_GROUP, SINK_ENTRYPOINT_GROUP
 from .options import ExecutionOptions, SchemaName, schema_to_str
 
 if TYPE_CHECKING:
-    import pandas as pd
-    import polars as pl
     from .build_context import TraceEvent
+
+logger = logging.getLogger(__name__)
 
 
 class IbisExecutor:
@@ -42,23 +45,80 @@ class IbisExecutor:
         self.close()
         return self._build_native(cohort_expression)
 
-    def to_polars(self, expression: ExpressionInput) -> "pl.DataFrame":
-        """Execute cohort expression and collect to Polars."""
+    def _collect(
+        self,
+        expression: ExpressionInput,
+        *,
+        name: str,
+        fallback_method: str,
+        install_hint: str,
+        params: Optional[dict[str, Any]] = None,
+    ) -> Any:
         table = self.build(expression)
-        if not hasattr(table, "to_polars"):
-            raise RuntimeError(
-                "The returned ibis table does not support to_polars() on this backend."
+        try:
+            collector = load_plugin(
+                COLLECTOR_ENTRYPOINT_GROUP,
+                name,
+                install_hint=install_hint,
             )
-        return table.to_polars()
+        except PluginNotFoundError:
+            method = getattr(table, fallback_method, None)
+            if callable(method):
+                return method()
+            raise
+        return collector(executor=self, table=table, params=params)
 
-    def to_pandas(self, expression: ExpressionInput) -> "pd.DataFrame":
-        """Execute cohort expression and collect to pandas."""
+    def to_polars(self, expression: ExpressionInput) -> Any:
+        """Execute cohort expression and collect to Polars.
+
+        Collection is handled by a collector plugin when installed, otherwise the
+        underlying ibis backend's `to_polars()` support is used directly.
+        """
+
+        return self._collect(
+            expression,
+            name="polars",
+            fallback_method="to_polars",
+            install_hint=(
+                "Install a polars collector plugin (for example `circe-polars`) "
+                "or install `polars`."
+            ),
+        )
+
+    def to_pandas(self, expression: ExpressionInput) -> Any:
+        """Execute cohort expression and collect to pandas.
+
+        Collection is handled by a collector plugin when installed, otherwise the
+        underlying ibis backend's `to_pandas()` support is used directly.
+        """
+
+        return self._collect(
+            expression,
+            name="pandas",
+            fallback_method="to_pandas",
+            install_hint=(
+                "Install a pandas collector plugin or ensure your ibis backend "
+                "supports to_pandas()."
+            ),
+        )
+
+    def to_sink(
+        self,
+        expression: ExpressionInput,
+        *,
+        name: str,
+        params: Optional[dict[str, Any]] = None,
+    ) -> Any:
+        """Execute cohort expression and write via a named sink plugin."""
         table = self.build(expression)
-        if not hasattr(table, "to_pandas"):
-            raise RuntimeError(
-                "The returned ibis table does not support to_pandas() on this backend."
-            )
-        return table.to_pandas()
+        sink = load_plugin(
+            SINK_ENTRYPOINT_GROUP,
+            name,
+            install_hint=(
+                "Install a sink plugin distribution providing this entry point."
+            ),
+        )
+        return sink(executor=self, table=table, params=params)
 
     def write(
         self,
@@ -120,7 +180,7 @@ class IbisExecutor:
             try:
                 ctx.close()
             except Exception as exc:
-                print(f"Warning: failed to close execution context: {exc}")
+                logger.warning("failed to close execution context: %s", exc)
 
     def __enter__(self) -> "IbisExecutor":
         return self
@@ -210,7 +270,7 @@ def to_polars(
     expression: ExpressionInput,
     conn: Any,
     options: Optional[ExecutionOptions] = None,
-) -> "pl.DataFrame":
+) -> Any:
     """Convenience wrapper for IbisExecutor.to_polars()."""
     with IbisExecutor(conn, options) as executor:
         return executor.to_polars(expression)
