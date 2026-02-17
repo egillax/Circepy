@@ -57,6 +57,9 @@ docs = [
 ibis = [
     "ibis-framework>=11.0.0; python_version >= '3.9'",
 ]
+polars = [
+    "polars>=0.20.0",
+]
 ibis-duckdb = [
     "ibis-framework[duckdb]>=11.0.0; python_version >= '3.9'",
 ]
@@ -66,6 +69,9 @@ ibis-postgres = [
 ibis-databricks = [
     "ibis-framework[databricks]>=11.0.0; python_version >= '3.9'",
 ]
+
+[project.entry-points."circe.execution.collectors"]
+polars = "circe.execution.collectors.polars:collect_polars"
 
 [project.urls]
 Homepage = "https://github.com/OHDSI/Circepy"

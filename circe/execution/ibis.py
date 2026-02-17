@@ -80,8 +80,7 @@ class IbisExecutor:
             name="polars",
             fallback_method="to_polars",
             install_hint=(
-                "Install a polars collector plugin (for example `circe-polars`) "
-                "or install `polars`."
+                "Install `ohdsi-circe-python-alpha[polars]` to enable Polars collection."
             ),
         )
 
