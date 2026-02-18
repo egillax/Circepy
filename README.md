@@ -136,6 +136,27 @@ sql = build_cohort_query(cohort, options)
 print(sql)
 ```
 
+### Experimental Ibis Execution API
+
+An experimental backend-native execution API is available under
+`circe.execution`.
+
+```python
+from circe.execution import ExecutionOptions, IbisExecutor
+
+# [!NOTE] PyPI release coming soon. Requires optional extras, e.g. `pip install ohdsi-circe-python-alpha[ibis-duckdb]`
+executor = IbisExecutor(conn, ExecutionOptions(cdm_schema="main"))
+events = executor.build(cohort)  # lazy ibis relation
+```
+
+Key execution options:
+
+- `trace_steps=True` enables step-level trace events.
+- `trace_sql=True` includes compiled SQL in trace events.
+- `capture_sql=True` captures SQL for materialized stages.
+- `probe_empty_primary_events` controls an eager `limit(1)` probe used to
+  short-circuit when there are no primary events (`True` by default).
+
 ## What's Included
 
 This package provides a complete Python implementation of CIRCE-BE with:
@@ -181,6 +202,7 @@ circe/
 │   ├── operations/            # Check operations
 │   ├── utils/                 # Check utilities
 │   └── warnings/              # Warning classes
+├── execution/                 # Experimental backend-native execution APIs
 ├── helper/                    # Utility helper classes
 ├── api.py                     # High-level API functions
 └── cli.py                     # Command-line interface
