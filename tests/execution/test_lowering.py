@@ -17,19 +17,26 @@ from circe.cohortdefinition import (
     Specimen,
     DrugEra,
     VisitDetail,
+    VisitOccurrence,
 )
 from circe.execution.lower.criteria import lower_criterion
 from circe.execution.normalize.criteria import normalize_criterion
 from circe.execution.plan.events import (
+    FilterByCareSite,
+    FilterByCareSiteLocationRegion,
     FilterByCodeset,
     FilterByConceptSet,
+    FilterByDateRange,
     FilterByNumericRange,
     FilterByPersonEthnicity,
     FilterByPersonRace,
+    FilterByProviderSpecialty,
+    FilterByVisit,
     KeepFirstPerPerson,
     FilterByText,
     StandardizeEventShape,
 )
+from circe.execution.plan.schema import DURATION, START_DATE
 from circe.vocabulary import Concept
 
 
@@ -164,3 +171,56 @@ def test_lowering_emits_race_and_ethnicity_person_filters():
     plan = lower_criterion(normalize_criterion(criteria), criterion_index=9)
     assert any(isinstance(step, FilterByPersonRace) for step in plan.steps)
     assert any(isinstance(step, FilterByPersonEthnicity) for step in plan.steps)
+
+
+def test_lowering_condition_occurrence_emits_related_filters_and_post_standardized_dates():
+    normalized = normalize_criterion(
+        ConditionOccurrence(
+            codeset_id=1,
+            occurrence_start_date={"op": "gte", "value": "2020-01-02"},
+            condition_type=[{"conceptId": 1001}],
+            provider_specialty=[{"conceptId": 2001}],
+            visit_type=[{"conceptId": 3001}],
+            date_adjustment={
+                "startOffset": 1,
+                "endOffset": 2,
+            },
+        )
+    )
+
+    plan = lower_criterion(normalized, criterion_index=10)
+
+    assert any(isinstance(step, FilterByConceptSet) for step in plan.steps)
+    assert any(isinstance(step, FilterByProviderSpecialty) for step in plan.steps)
+    assert any(isinstance(step, FilterByVisit) for step in plan.steps)
+    date_steps = [step for step in plan.steps if isinstance(step, FilterByDateRange)]
+    assert len(date_steps) == 1
+    assert date_steps[0].column == START_DATE
+    standardize = next(step for step in plan.steps if isinstance(step, StandardizeEventShape))
+    assert standardize.start_offset_days == 1
+    assert standardize.end_offset_days == 2
+
+
+def test_lowering_visit_occurrence_emits_care_site_and_duration_filters():
+    normalized = normalize_criterion(
+        VisitOccurrence(
+            codeset_id=1,
+            visit_type=[{"conceptId": 1001}],
+            visit_length={"op": "gte", "value": 2},
+            provider_specialty=[{"conceptId": 2001}],
+            place_of_service=[{"conceptId": 3001}],
+            place_of_service_location=4,
+        )
+    )
+
+    plan = lower_criterion(normalized, criterion_index=11)
+
+    assert any(isinstance(step, FilterByProviderSpecialty) for step in plan.steps)
+    assert any(isinstance(step, FilterByCareSite) for step in plan.steps)
+    assert any(isinstance(step, FilterByCareSiteLocationRegion) for step in plan.steps)
+    duration_steps = [
+        step
+        for step in plan.steps
+        if isinstance(step, FilterByNumericRange) and step.column == DURATION
+    ]
+    assert len(duration_steps) == 1

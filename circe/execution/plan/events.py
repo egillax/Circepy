@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Tuple, Union
 
 from .._dataclass import frozen_slots_dataclass
 from .predicates import DateRangePredicate, NumericRangePredicate
@@ -61,7 +61,10 @@ class JoinLocationRegion:
 
 @frozen_slots_dataclass
 class FilterByVisit:
-    visit_type_codeset_id: int | None = None
+    visit_occurrence_column: str = "visit_occurrence_id"
+    concept_ids: Tuple[int, ...] = ()
+    codeset_id: int | None = None
+    exclude: bool = False
 
 
 @frozen_slots_dataclass
@@ -71,7 +74,26 @@ class FilterByVisitDetail:
 
 @frozen_slots_dataclass
 class FilterByProviderSpecialty:
-    provider_codeset_id: int | None = None
+    provider_id_column: str = "provider_id"
+    concept_ids: Tuple[int, ...] = ()
+    codeset_id: int | None = None
+    exclude: bool = False
+
+
+@frozen_slots_dataclass
+class FilterByCareSite:
+    care_site_id_column: str = "care_site_id"
+    concept_ids: Tuple[int, ...] = ()
+    codeset_id: int | None = None
+    exclude: bool = False
+
+
+@frozen_slots_dataclass
+class FilterByCareSiteLocationRegion:
+    care_site_id_column: str = "care_site_id"
+    start_date_column: str = "start_date"
+    end_date_column: str = "end_date"
+    codeset_id: int = 0
 
 
 @frozen_slots_dataclass
@@ -107,6 +129,8 @@ class KeepFirstPerPerson:
 class ApplyDateAdjustment:
     start_offset_days: int
     end_offset_days: int
+    start_with: str = "start_date"
+    end_with: str = "end_date"
 
 
 @frozen_slots_dataclass
@@ -118,6 +142,10 @@ class RestrictToCorrelatedWindow:
 class StandardizeEventShape:
     criterion_type: str
     criterion_index: int
+    start_offset_days: int = 0
+    end_offset_days: int = 0
+    start_with: str = "start_date"
+    end_with: str = "end_date"
 
 
 PlanStep = Union[
@@ -130,6 +158,8 @@ PlanStep = Union[
     FilterByVisit,
     FilterByVisitDetail,
     FilterByProviderSpecialty,
+    FilterByCareSite,
+    FilterByCareSiteLocationRegion,
     FilterByPersonAge,
     FilterByPersonGender,
     FilterByPersonRace,

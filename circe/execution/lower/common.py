@@ -8,6 +8,8 @@ from ..normalize.criteria import NormalizedCriterion
 from ..plan.events import (
     EventPlan,
     EventSource,
+    FilterByCareSite,
+    FilterByCareSiteLocationRegion,
     FilterByCodeset,
     FilterByConceptSet,
     FilterByDateRange,
@@ -16,12 +18,15 @@ from ..plan.events import (
     FilterByPersonEthnicity,
     FilterByPersonGender,
     FilterByPersonRace,
+    FilterByProviderSpecialty,
     FilterByText,
+    FilterByVisit,
     KeepFirstPerPerson,
     PlanStep,
     StandardizeEventShape,
 )
 from ..plan.predicates import DateRangePredicate, NumericRangePredicate
+from ..plan.schema import DURATION, END_DATE, START_DATE
 
 
 def lower_common_steps(criterion: NormalizedCriterion) -> List[PlanStep]:
@@ -32,42 +37,6 @@ def lower_common_steps(criterion: NormalizedCriterion) -> List[PlanStep]:
             FilterByCodeset(
                 column=criterion.concept_column,
                 codeset_id=int(criterion.codeset_id),
-            )
-        )
-
-    if criterion.occurrence_start_date is not None:
-        steps.append(
-            FilterByDateRange(
-                column=criterion.start_date_column,
-                predicate=DateRangePredicate(
-                    op=criterion.occurrence_start_date.op,
-                    value=criterion.occurrence_start_date.value,
-                    extent=criterion.occurrence_start_date.extent,
-                ),
-            )
-        )
-
-    if criterion.occurrence_end_date is not None:
-        steps.append(
-            FilterByDateRange(
-                column=criterion.end_date_column,
-                predicate=DateRangePredicate(
-                    op=criterion.occurrence_end_date.op,
-                    value=criterion.occurrence_end_date.value,
-                    extent=criterion.occurrence_end_date.extent,
-                ),
-            )
-        )
-
-    if criterion.person_filters.age is not None:
-        steps.append(
-            FilterByPersonAge(
-                date_column=criterion.start_date_column,
-                predicate=NumericRangePredicate(
-                    op=criterion.person_filters.age.op,
-                    value=criterion.person_filters.age.value,
-                    extent=criterion.person_filters.age.extent,
-                ),
             )
         )
 
@@ -192,18 +161,198 @@ def append_concept_filters(
         )
 
 
+def append_visit_filters(
+    steps: list[PlanStep],
+    *,
+    visit_occurrence_column: str,
+    concepts: list[Concept] | None = None,
+    codeset_selection: ConceptSetSelection | None = None,
+    exclude: bool = False,
+) -> None:
+    ids = concept_ids(concepts)
+    if ids:
+        steps.append(
+            FilterByVisit(
+                visit_occurrence_column=visit_occurrence_column,
+                concept_ids=ids,
+                exclude=bool(exclude),
+            )
+        )
+
+    if codeset_selection and codeset_selection.codeset_id is not None:
+        steps.append(
+            FilterByVisit(
+                visit_occurrence_column=visit_occurrence_column,
+                codeset_id=int(codeset_selection.codeset_id),
+                exclude=bool(codeset_selection.is_exclusion),
+            )
+        )
+
+
+def append_provider_specialty_filters(
+    steps: list[PlanStep],
+    *,
+    provider_id_column: str = "provider_id",
+    concepts: list[Concept] | None = None,
+    codeset_selection: ConceptSetSelection | None = None,
+) -> None:
+    ids = concept_ids(concepts)
+    if ids:
+        steps.append(
+            FilterByProviderSpecialty(
+                provider_id_column=provider_id_column,
+                concept_ids=ids,
+            )
+        )
+
+    if codeset_selection and codeset_selection.codeset_id is not None:
+        steps.append(
+            FilterByProviderSpecialty(
+                provider_id_column=provider_id_column,
+                codeset_id=int(codeset_selection.codeset_id),
+                exclude=bool(codeset_selection.is_exclusion),
+            )
+        )
+
+
+def append_care_site_filters(
+    steps: list[PlanStep],
+    *,
+    care_site_id_column: str = "care_site_id",
+    concepts: list[Concept] | None = None,
+    codeset_selection: ConceptSetSelection | None = None,
+) -> None:
+    ids = concept_ids(concepts)
+    if ids:
+        steps.append(
+            FilterByCareSite(
+                care_site_id_column=care_site_id_column,
+                concept_ids=ids,
+            )
+        )
+
+    if codeset_selection and codeset_selection.codeset_id is not None:
+        steps.append(
+            FilterByCareSite(
+                care_site_id_column=care_site_id_column,
+                codeset_id=int(codeset_selection.codeset_id),
+                exclude=bool(codeset_selection.is_exclusion),
+            )
+        )
+
+
+def append_care_site_location_region_filter(
+    steps: list[PlanStep],
+    *,
+    care_site_id_column: str = "care_site_id",
+    start_date_column: str,
+    end_date_column: str,
+    codeset_id: int | None,
+) -> None:
+    if codeset_id is None:
+        return
+    steps.append(
+        FilterByCareSiteLocationRegion(
+            care_site_id_column=care_site_id_column,
+            start_date_column=start_date_column,
+            end_date_column=end_date_column,
+            codeset_id=int(codeset_id),
+        )
+    )
+
+
+def append_post_standardization_common_steps(
+    criterion: NormalizedCriterion,
+    *,
+    steps: list[PlanStep],
+) -> None:
+    if criterion.person_filters.age is not None:
+        steps.append(
+            FilterByPersonAge(
+                date_column=START_DATE,
+                predicate=NumericRangePredicate(
+                    op=criterion.person_filters.age.op,
+                    value=criterion.person_filters.age.value,
+                    extent=criterion.person_filters.age.extent,
+                ),
+            )
+        )
+
+    if criterion.occurrence_start_date is not None:
+        steps.append(
+            FilterByDateRange(
+                column=START_DATE,
+                predicate=DateRangePredicate(
+                    op=criterion.occurrence_start_date.op,
+                    value=criterion.occurrence_start_date.value,
+                    extent=criterion.occurrence_start_date.extent,
+                ),
+            )
+        )
+
+    if criterion.occurrence_end_date is not None:
+        steps.append(
+            FilterByDateRange(
+                column=END_DATE,
+                predicate=DateRangePredicate(
+                    op=criterion.occurrence_end_date.op,
+                    value=criterion.occurrence_end_date.value,
+                    extent=criterion.occurrence_end_date.extent,
+                ),
+            )
+        )
+
+
+def append_duration_filter(
+    steps: list[PlanStep],
+    *,
+    value: NumericRange | None,
+) -> None:
+    append_numeric_filter(steps, column=DURATION, value=value)
+
+
 def build_standard_domain_plan(
     criterion: NormalizedCriterion,
     *,
     criterion_index: int,
     steps: list[PlanStep],
+    post_standardize_steps: list[PlanStep] | None = None,
 ) -> EventPlan:
-    steps.append(
+    plan_steps = list(steps)
+    date_adjustment = getattr(criterion.raw_criteria, "date_adjustment", None)
+    start_with = START_DATE
+    end_with = END_DATE
+    start_offset_days = 0
+    end_offset_days = 0
+    if date_adjustment is not None:
+        start_with = (
+            date_adjustment.start_with.value
+            if getattr(date_adjustment, "start_with", None) is not None
+            else START_DATE
+        )
+        end_with = (
+            date_adjustment.end_with.value
+            if getattr(date_adjustment, "end_with", None) is not None
+            else END_DATE
+        )
+        start_offset_days = int(date_adjustment.start_offset)
+        end_offset_days = int(date_adjustment.end_offset)
+
+    plan_steps.append(
         StandardizeEventShape(
             criterion_type=criterion.criterion_type,
             criterion_index=criterion_index,
+            start_offset_days=start_offset_days,
+            end_offset_days=end_offset_days,
+            start_with=start_with,
+            end_with=end_with,
         )
     )
+
+    standard_post_steps = list(post_standardize_steps or [])
+    append_post_standardization_common_steps(criterion, steps=standard_post_steps)
+    plan_steps.extend(standard_post_steps)
+
     return EventPlan(
         source=EventSource(
             table_name=criterion.source_table,
@@ -217,7 +366,7 @@ def build_standard_domain_plan(
         ),
         criterion_type=criterion.criterion_type,
         criterion_index=criterion_index,
-        steps=tuple(steps),
+        steps=tuple(plan_steps),
     )
 
 

@@ -5,6 +5,8 @@ import ibis
 from ..errors import CompilationError, UnsupportedFeatureError
 from ..plan.events import (
     ApplyDateAdjustment,
+    FilterByCareSite,
+    FilterByCareSiteLocationRegion,
     FilterByCodeset,
     FilterByConceptSet,
     FilterByDateRange,
@@ -13,7 +15,9 @@ from ..plan.events import (
     FilterByPersonEthnicity,
     FilterByPersonGender,
     FilterByPersonRace,
+    FilterByProviderSpecialty,
     FilterByText,
+    FilterByVisit,
     JoinLocationRegion,
     KeepFirstPerPerson,
     RestrictToCorrelatedWindow,
@@ -106,6 +110,138 @@ def _apply_date_predicate(expr, predicate: DateRangePredicate):
     )
 
 
+def _resolve_concept_ids(
+    *,
+    direct_ids: tuple[int, ...],
+    codeset_id: int | None,
+    ctx: ExecutionContext,
+) -> tuple[int, ...]:
+    all_ids = list(direct_ids)
+    if codeset_id is not None:
+        for cid in ctx.concept_ids_for_codeset(codeset_id):
+            if cid not in all_ids:
+                all_ids.append(cid)
+    return tuple(all_ids)
+
+
+def _select_original_columns(table, joined):
+    return joined.select(*[joined[c] for c in table.columns])
+
+
+def _filter_visit_concepts(table, ctx: ExecutionContext, *, step: FilterByVisit):
+    visit = ctx.table("visit_occurrence")
+    visit_lookup = visit.select(
+        visit.visit_occurrence_id.name("_visit_occurrence_id"),
+        visit.person_id.name("_visit_person_id"),
+        visit.visit_concept_id.name("_visit_concept_id"),
+    )
+    joined = table.join(
+        visit_lookup,
+        predicates=[
+            table[step.visit_occurrence_column] == visit_lookup._visit_occurrence_id,
+            table[PERSON_ID] == visit_lookup._visit_person_id,
+        ],
+    )
+    concept_ids = _resolve_concept_ids(
+        direct_ids=step.concept_ids,
+        codeset_id=step.codeset_id,
+        ctx=ctx,
+    )
+    predicate = joined._visit_concept_id.isin(concept_ids)
+    filtered = joined.filter(~predicate if step.exclude else predicate)
+    return _select_original_columns(table, filtered)
+
+
+def _filter_provider_specialty(
+    table,
+    ctx: ExecutionContext,
+    *,
+    step: FilterByProviderSpecialty,
+):
+    provider = ctx.table("provider")
+    provider_lookup = provider.select(
+        provider.provider_id.name("_provider_id"),
+        provider.specialty_concept_id.name("_specialty_concept_id"),
+    )
+    joined = table.join(
+        provider_lookup,
+        predicates=[table[step.provider_id_column] == provider_lookup._provider_id],
+    )
+    concept_ids = _resolve_concept_ids(
+        direct_ids=step.concept_ids,
+        codeset_id=step.codeset_id,
+        ctx=ctx,
+    )
+    predicate = joined._specialty_concept_id.isin(concept_ids)
+    filtered = joined.filter(~predicate if step.exclude else predicate)
+    return _select_original_columns(table, filtered)
+
+
+def _filter_care_site(table, ctx: ExecutionContext, *, step: FilterByCareSite):
+    care_site = ctx.table("care_site")
+    care_site_lookup = care_site.select(
+        care_site.care_site_id.name("_care_site_id"),
+        care_site.place_of_service_concept_id.name("_place_of_service_concept_id"),
+    )
+    joined = table.join(
+        care_site_lookup,
+        predicates=[table[step.care_site_id_column] == care_site_lookup._care_site_id],
+    )
+    concept_ids = _resolve_concept_ids(
+        direct_ids=step.concept_ids,
+        codeset_id=step.codeset_id,
+        ctx=ctx,
+    )
+    predicate = joined._place_of_service_concept_id.isin(concept_ids)
+    filtered = joined.filter(~predicate if step.exclude else predicate)
+    return _select_original_columns(table, filtered)
+
+
+def _filter_care_site_location_region(
+    table,
+    ctx: ExecutionContext,
+    *,
+    step: FilterByCareSiteLocationRegion,
+):
+    region_ids = ctx.concept_ids_for_codeset(step.codeset_id)
+    if not region_ids:
+        return table.limit(0)
+
+    location_history = ctx.table("location_history")
+    history_lookup = location_history.select(
+        location_history.entity_id.name("_care_site_id"),
+        location_history.location_id.name("_history_location_id"),
+        location_history.domain_id.name("_history_domain_id"),
+        location_history.start_date.name("_history_start_date"),
+        location_history.end_date.name("_history_end_date"),
+    )
+    joined_history = table.join(
+        history_lookup,
+        predicates=[table[step.care_site_id_column] == history_lookup._care_site_id],
+    )
+    history_end = ibis.coalesce(
+        joined_history._history_end_date.cast("date"),
+        ibis.literal("2099-12-31").cast("date"),
+    )
+    joined_history = joined_history.filter(
+        (joined_history._history_domain_id == "CARE_SITE")
+        & (joined_history[step.start_date_column].cast("date") >= joined_history._history_start_date.cast("date"))
+        & (joined_history[step.end_date_column].cast("date") <= history_end)
+    )
+
+    location = ctx.table("location")
+    location_lookup = location.select(
+        location.location_id.name("_location_id"),
+        location.region_concept_id.name("_region_concept_id"),
+    )
+    joined = joined_history.join(
+        location_lookup,
+        predicates=[joined_history._history_location_id == location_lookup._location_id],
+    )
+    filtered = joined.filter(joined._region_concept_id.isin(region_ids))
+    return _select_original_columns(table, filtered)
+
+
 def apply_step(step, *, table, source, ctx: ExecutionContext):
     if isinstance(step, JoinLocationRegion):
         location = ctx.table("location").select(
@@ -114,7 +250,7 @@ def apply_step(step, *, table, source, ctx: ExecutionContext):
         )
         joined = table.join(
             location,
-            table[step.location_id_column] == location.location_id,
+            predicates=[table[step.location_id_column] == location.location_id],
         )
         return joined.select(
             *[joined[c] for c in table.columns],
@@ -133,6 +269,18 @@ def apply_step(step, *, table, source, ctx: ExecutionContext):
             return table if step.exclude else table.limit(0)
         predicate = table[step.column].isin(step.concept_ids)
         return table.filter(~predicate if step.exclude else predicate)
+
+    if isinstance(step, FilterByVisit):
+        return _filter_visit_concepts(table, ctx, step=step)
+
+    if isinstance(step, FilterByProviderSpecialty):
+        return _filter_provider_specialty(table, ctx, step=step)
+
+    if isinstance(step, FilterByCareSite):
+        return _filter_care_site(table, ctx, step=step)
+
+    if isinstance(step, FilterByCareSiteLocationRegion):
+        return _filter_care_site_location_region(table, ctx, step=step)
 
     if isinstance(step, FilterByDateRange):
         return table.filter(_apply_date_predicate(table[step.column], step.predicate))
@@ -196,12 +344,12 @@ def apply_step(step, *, table, source, ctx: ExecutionContext):
         return ranked.filter(ranked._exec_rn == 0).drop("_exec_rn")
 
     if isinstance(step, ApplyDateAdjustment):
+        start_anchor = table[START_DATE] if step.start_with == START_DATE else table[END_DATE]
+        end_anchor = table[START_DATE] if step.end_with == START_DATE else table[END_DATE]
         return table.mutate(
             **{
-                START_DATE: (
-                    table[START_DATE] + ibis.interval(days=step.start_offset_days)
-                ),
-                END_DATE: table[END_DATE] + ibis.interval(days=step.end_offset_days),
+                START_DATE: start_anchor + ibis.interval(days=step.start_offset_days),
+                END_DATE: end_anchor + ibis.interval(days=step.end_offset_days),
             }
         )
 
@@ -217,6 +365,10 @@ def apply_step(step, *, table, source, ctx: ExecutionContext):
             source=source,
             criterion_type=step.criterion_type,
             criterion_index=step.criterion_index,
+            start_offset_days=step.start_offset_days,
+            end_offset_days=step.end_offset_days,
+            start_with=step.start_with,
+            end_with=step.end_with,
         )
 
     raise CompilationError(

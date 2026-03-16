@@ -6,7 +6,9 @@ from ..plan.events import EventPlan
 from .common import (
     append_concept_filters,
     append_numeric_filter,
+    append_provider_specialty_filters,
     append_text_filter,
+    append_visit_filters,
     build_standard_domain_plan,
     lower_common_steps,
 )
@@ -49,6 +51,17 @@ def lower_observation(
         column="qualifier_concept_id",
         concepts=raw.qualifier,
         codeset_selection=raw.qualifier_cs,
+    )
+    append_provider_specialty_filters(
+        steps,
+        concepts=raw.provider_specialty,
+        codeset_selection=raw.provider_specialty_cs,
+    )
+    append_visit_filters(
+        steps,
+        visit_occurrence_column="visit_occurrence_id",
+        concepts=raw.visit_type,
+        codeset_selection=raw.visit_type_cs,
     )
 
     return build_standard_domain_plan(
