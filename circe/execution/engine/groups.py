@@ -61,8 +61,10 @@ def _evaluate_group(
 
     joined_counts = keys.left_join(
         group_counts,
-        (keys.person_id == group_counts.person_id)
-        & (keys.event_id == group_counts.event_id),
+        predicates=[
+            (keys.person_id == group_counts.person_id)
+            & (keys.event_id == group_counts.event_id)
+        ],
     )
     counted = joined_counts.mutate(
         matched_children=ibis.coalesce(joined_counts.matched_children, ibis.literal(0))
@@ -93,7 +95,9 @@ def apply_additional_criteria(
 
     filtered = events.join(
         matched_keys,
-        (events.person_id == matched_keys.person_id)
-        & (events.event_id == matched_keys.event_id),
+        predicates=[
+            (events.person_id == matched_keys.person_id)
+            & (events.event_id == matched_keys.event_id)
+        ],
     )
     return filtered.select(*[filtered[c] for c in events.columns])

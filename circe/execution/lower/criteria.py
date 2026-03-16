@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Dict, Type
+from typing import Dict, Protocol, Type
 
 from ...cohortdefinition.criteria import (
     ConditionOccurrence,
@@ -41,7 +41,14 @@ from .specimen import lower_specimen
 from .visit_detail import lower_visit_detail
 from .visit_occurrence import lower_visit_occurrence
 
-LowerFn = Callable[[NormalizedCriterion], EventPlan]
+
+class LowerFn(Protocol):
+    def __call__(
+        self,
+        criterion: NormalizedCriterion,
+        *,
+        criterion_index: int,
+    ) -> EventPlan: ...
 
 
 LOWERERS: Dict[Type[Criteria], LowerFn] = {

@@ -13,7 +13,6 @@ from ..plan.schema import (
     PERSON_ID,
     SOURCE_CONCEPT_ID,
     SOURCE_TABLE,
-    STANDARD_EVENT_COLUMNS,
     START_DATE,
     VISIT_OCCURRENCE_ID,
 )

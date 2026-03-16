@@ -116,7 +116,10 @@ def correlated_match_keys(
         correlated_events[SOURCE_CONCEPT_ID].name("a_source_concept_id"),
     )
 
-    joined = p.join(a, p.p_person_id == a.a_person_id)
+    joined = p.join(
+        a,
+        predicates=[p.p_person_id == a.a_person_id],
+    )
     constrained = apply_window_constraints(joined, correlated)
 
     if correlated.occurrence_is_distinct:

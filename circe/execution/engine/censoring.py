@@ -38,11 +38,14 @@ def apply_censoring(events, criteria, window, ctx):
         return events
 
     censor_events = _compile_censor_events(criteria, ctx)
+    if censor_events is None:
+        return events
+
     with_bounds = attach_observation_bounds(events, ctx)
 
     joined = with_bounds.join(
         censor_events,
-        with_bounds.person_id == censor_events.person_id,
+        predicates=[with_bounds.person_id == censor_events.person_id],
     )
     valid = joined.filter(
         (joined.censor_start_date >= joined.start_date)
@@ -54,8 +57,10 @@ def apply_censoring(events, criteria, window, ctx):
 
     merged = with_bounds.left_join(
         censor_min,
-        (with_bounds.person_id == censor_min.person_id)
-        & (with_bounds.event_id == censor_min.event_id),
+        predicates=[
+            (with_bounds.person_id == censor_min.person_id)
+            & (with_bounds.event_id == censor_min.event_id)
+        ],
     )
 
     new_end = ibis.coalesce(
