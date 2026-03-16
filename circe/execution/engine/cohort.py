@@ -10,6 +10,7 @@ from .collapse import collapse_events
 from .end_strategy import apply_end_strategy
 from .groups import apply_additional_criteria
 from .inclusion import apply_inclusion_rules
+from .limits import apply_result_limit
 from .primary import build_primary_events
 
 
@@ -25,12 +26,26 @@ def build_cohort_table(normalized: NormalizedCohort, ctx: ExecutionContext) -> T
         primary_event_plans=primary_plans,
         observation_window=normalized.primary.observation_window,
         primary_limit_type=normalized.primary.primary_limit_type,
+        qualified_limit_type=normalized.result_limits.qualified_limit_type,
+        expression_limit_type=normalized.result_limits.expression_limit_type,
     )
     primary_events = build_primary_events(cohort_plan, ctx)
     qualified_events = apply_additional_criteria(
         primary_events, normalized.additional_criteria, ctx
     )
+    if (
+        normalized.additional_criteria is not None
+        and not normalized.additional_criteria.is_empty()
+    ):
+        qualified_events = apply_result_limit(
+            qualified_events,
+            cohort_plan.qualified_limit_type,
+        )
     included_events = apply_inclusion_rules(qualified_events, normalized.inclusion_rules, ctx)
+    included_events = apply_result_limit(
+        included_events,
+        cohort_plan.expression_limit_type,
+    )
     ended_events = apply_end_strategy(included_events, normalized.end_strategy, ctx)
     censored_events = apply_censoring(
         ended_events,

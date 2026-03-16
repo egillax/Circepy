@@ -10,6 +10,7 @@ from ..plan.cohort import CohortPlan
 from ..plan.schema import DOMAIN, EVENT_ID, PERSON_ID, START_DATE
 from ..typing import Table
 from .groups import apply_additional_criteria
+from .limits import apply_result_limit
 
 
 def _union_all(tables):
@@ -46,17 +47,6 @@ def _apply_observation_window(
     return filtered.select(*[filtered[c] for c in events.columns])
 
 
-def _apply_primary_limit(events, primary_limit_type: str):
-    if primary_limit_type in {"all", ""}:
-        return events
-    window = ibis.window(
-        group_by=events[PERSON_ID],
-        order_by=[events[START_DATE], events[EVENT_ID]],
-    )
-    ranked = events.mutate(_limit_rn=ibis.row_number().over(window))
-    return ranked.filter(ranked._limit_rn == 0).drop("_limit_rn")
-
-
 def build_primary_events(plan: CohortPlan, ctx: ExecutionContext) -> Table:
     if not plan.primary_event_plans:
         raise ExecutionNormalizationError(
@@ -76,5 +66,5 @@ def build_primary_events(plan: CohortPlan, ctx: ExecutionContext) -> Table:
     if plan.observation_window is not None:
         events = _apply_observation_window(events, ctx, plan.observation_window)
 
-    events = _apply_primary_limit(events, plan.primary_limit_type)
+    events = apply_result_limit(events, plan.primary_limit_type)
     return events

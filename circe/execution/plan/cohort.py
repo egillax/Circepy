@@ -19,3 +19,5 @@ class CohortPlan:
     primary_event_plans: Tuple[PrimaryEventInput, ...]
     observation_window: NormalizedObservationWindow | None
     primary_limit_type: str
+    qualified_limit_type: str
+    expression_limit_type: str

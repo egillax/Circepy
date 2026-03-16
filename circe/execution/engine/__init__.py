@@ -4,6 +4,7 @@ from .collapse import collapse_events
 from .groups import apply_additional_criteria
 from .end_strategy import apply_end_strategy
 from .inclusion import apply_inclusion_rules
+from .limits import apply_result_limit
 from .primary import build_primary_events
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "apply_end_strategy",
     "apply_censoring",
     "collapse_events",
+    "apply_result_limit",
 ]

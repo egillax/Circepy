@@ -9,11 +9,22 @@ from ..lower.criteria import lower_criterion
 from ..normalize.groups import NormalizedCorrelatedCriteria
 from ..plan.schema import (
     CONCEPT_ID,
+    DAYS_SUPPLY,
+    DURATION,
     END_DATE,
     EVENT_ID,
+    GAP_DAYS,
+    OCCURRENCE_COUNT,
     PERSON_ID,
+    QUANTITY,
+    RANGE_HIGH,
+    RANGE_LOW,
+    REFILLS,
     SOURCE_CONCEPT_ID,
     START_DATE,
+    UNIT_CONCEPT_ID,
+    VALUE_AS_NUMBER,
+    VISIT_DETAIL_ID,
     VISIT_OCCURRENCE_ID,
 )
 from ..typing import Table
@@ -31,8 +42,19 @@ def resolve_distinct_count_column(count_column: str | None) -> str:
         "domain_source_concept_id": f"a_{SOURCE_CONCEPT_ID}",
         VISIT_OCCURRENCE_ID: f"a_{VISIT_OCCURRENCE_ID}",
         "visit_id": f"a_{VISIT_OCCURRENCE_ID}",
+        "visit_detail_id": f"a_{VISIT_DETAIL_ID}",
         START_DATE: f"a_{START_DATE}",
         END_DATE: f"a_{END_DATE}",
+        "duration": f"a_{DURATION}",
+        "quantity": f"a_{QUANTITY}",
+        "days_supply": f"a_{DAYS_SUPPLY}",
+        "refills": f"a_{REFILLS}",
+        "range_low": f"a_{RANGE_LOW}",
+        "range_high": f"a_{RANGE_HIGH}",
+        "value_as_number": f"a_{VALUE_AS_NUMBER}",
+        "unit_concept_id": f"a_{UNIT_CONCEPT_ID}",
+        "occurrence_count": f"a_{OCCURRENCE_COUNT}",
+        "gap_days": f"a_{GAP_DAYS}",
     }
     if normalized in mapping:
         return mapping[normalized]
@@ -112,8 +134,19 @@ def correlated_match_keys(
         correlated_events[START_DATE].name("a_start_date"),
         correlated_events[END_DATE].name("a_end_date"),
         correlated_events[VISIT_OCCURRENCE_ID].name("a_visit_occurrence_id"),
+        correlated_events[VISIT_DETAIL_ID].name("a_visit_detail_id"),
         correlated_events[CONCEPT_ID].name("a_concept_id"),
         correlated_events[SOURCE_CONCEPT_ID].name("a_source_concept_id"),
+        correlated_events[QUANTITY].name("a_quantity"),
+        correlated_events[DAYS_SUPPLY].name("a_days_supply"),
+        correlated_events[REFILLS].name("a_refills"),
+        correlated_events[RANGE_LOW].name("a_range_low"),
+        correlated_events[RANGE_HIGH].name("a_range_high"),
+        correlated_events[VALUE_AS_NUMBER].name("a_value_as_number"),
+        correlated_events[UNIT_CONCEPT_ID].name("a_unit_concept_id"),
+        correlated_events[OCCURRENCE_COUNT].name("a_occurrence_count"),
+        correlated_events[GAP_DAYS].name("a_gap_days"),
+        correlated_events[DURATION].name("a_duration"),
     )
 
     joined = p.join(
@@ -137,7 +170,9 @@ def correlated_match_keys(
     keys = event_keys(index_events)
     joined_counts = keys.left_join(
         counts,
-        (keys.person_id == counts.p_person_id) & (keys.event_id == counts.p_event_id),
+        predicates=[
+            (keys.person_id == counts.p_person_id) & (keys.event_id == counts.p_event_id)
+        ],
     )
     counted = joined_counts.mutate(
         match_count=ibis.coalesce(joined_counts.match_count, ibis.literal(0))

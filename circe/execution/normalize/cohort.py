@@ -31,6 +31,12 @@ class NormalizedPrimaryCriteria:
 
 
 @frozen_slots_dataclass
+class NormalizedResultLimits:
+    qualified_limit_type: str
+    expression_limit_type: str
+
+
+@frozen_slots_dataclass
 class NormalizedConceptSetItem:
     concept_id: int
     is_excluded: bool
@@ -50,6 +56,7 @@ class NormalizedCohort:
     options: BuildExpressionQueryOptions | None
     concept_sets: Dict[int, NormalizedConceptSet]
     primary: NormalizedPrimaryCriteria
+    result_limits: NormalizedResultLimits
     additional_criteria: NormalizedCriteriaGroup | None
     inclusion_rules: Tuple[NormalizedInclusionRule, ...]
     censoring_criteria: Tuple[NormalizedCriterion, ...]
@@ -139,6 +146,16 @@ def normalize_cohort(
             (primary.primary_limit.type if primary.primary_limit else "all") or "all"
         ).lower(),
     )
+    normalized_limits = NormalizedResultLimits(
+        qualified_limit_type=(
+            (expression.qualified_limit.type if expression.qualified_limit else "all")
+            or "all"
+        ).lower(),
+        expression_limit_type=(
+            (expression.expression_limit.type if expression.expression_limit else "all")
+            or "all"
+        ).lower(),
+    )
 
     normalized_end_strategy = normalize_end_strategy(expression.end_strategy)
     if normalized_end_strategy is not None and normalized_end_strategy.kind == "custom_era":
@@ -152,6 +169,7 @@ def normalize_cohort(
         options=options,
         concept_sets=_extract_codesets(expression.concept_sets),
         primary=normalized_primary,
+        result_limits=normalized_limits,
         additional_criteria=normalize_criteria_group(expression.additional_criteria),
         inclusion_rules=tuple(
             normalize_inclusion_rule(rule) for rule in expression.inclusion_rules

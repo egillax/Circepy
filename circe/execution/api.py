@@ -127,7 +127,7 @@ def write_cohort(
         relation,
         backend=backend,
         target_table=target_table,
-        results_schema=(results_schema or cdm_schema),
+        results_schema=results_schema,
         if_exists=if_exists,
         temporary=temporary,
     )
